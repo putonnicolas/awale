@@ -102,7 +102,9 @@ static void app(void) {
             strncat(buffer, " disconnected !", BUF_SIZE - strlen(buffer) - 1);
             send_message_to_all_clients(clients, client, actual, buffer, 1);
           } else {
-            send_message_to_all_clients(clients, client, actual, buffer, 0);
+            // Handle sending message to specific clients.
+            Client choosed_client;
+            send_message_to_specific_client(choosed_client, client, actual, buffer, 0);
       printf("%s\n", buffer);
           }
           break;
@@ -149,6 +151,23 @@ static void send_message_to_all_clients(Client *clients, Client sender,
   }
 }
 
+static void send_message_to_specific_client(Client client, Client sender,
+                                        int actual, const char *buffer,
+                                        char from_server) {
+  int i = 0;
+  char message[BUF_SIZE];
+  message[0] = 0;
+  if (sender.sock != client.sock)
+  {
+      if (from_server == 0) {
+        strncpy(message, sender.name, BUF_SIZE - 1);
+        strncat(message, " : ", sizeof message - strlen(message) - 1);
+      }
+      strncat(message, buffer, sizeof message - strlen(message) - 1);
+      write_client(client.sock, message);
+  }
+}
+
 static int init_connection(void) {
   SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
   SOCKADDR_IN sin = {0};
@@ -189,6 +208,21 @@ static int read_client(SOCKET sock, char *buffer) {
   buffer[n] = 0;
 
   return n;
+}
+
+static void extract_command(const char *src, char *cmd) {
+  if (strlen(src) <= 0) return;
+
+  int i = 0;
+  char c;
+  do 
+  { 
+    c = src[i];
+    cmd[i] = c;
+    i++;
+  } while(c != ' ');
+
+  cmd[i] = '\0';
 }
 
 static void write_client(SOCKET sock, const char *buffer) {

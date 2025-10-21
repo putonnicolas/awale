@@ -36,8 +36,21 @@ typedef struct in_addr IN_ADDR;
 
 typedef struct
 {
+  int* tab;
+  int capturedSeeds;
+  Player* challenger; /*
+  null : not in fight at all, 
+  not null and challenger.challenger = null : not in fight, challenger waiting for fight
+  not null and challenger.challenger != null : in fight with challenger    
+*/
+} Player;
+
+
+typedef struct
+{
    SOCKET sock;
    char name[BUF_SIZE];
+   Player* player;
 }Client;
 
 static void init(void);
