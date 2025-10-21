@@ -103,7 +103,7 @@ static void app(void) {
             send_message_to_all_clients(clients, client, actual, buffer, 1);
           } else {
             send_message_to_all_clients(clients, client, actual, buffer, 0);
-      printf("%s\n", buffer);
+            printf("%s\n", buffer);
           }
           break;
         }
