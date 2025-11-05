@@ -5,24 +5,28 @@
 
 #include "server.h"
 
-static void init(void) {
+static void init(void)
+{
 #ifdef WIN32
   WSADATA wsa;
   int err = WSAStartup(MAKEWORD(2, 2), &wsa);
-  if (err < 0) {
+  if (err < 0)
+  {
     puts("WSAStartup failed !");
     exit(EXIT_FAILURE);
   }
 #endif
 }
 
-static void end(void) {
+static void end(void)
+{
 #ifdef WIN32
   WSACleanup();
 #endif
 }
 
-static void app(void) {
+static void app(void)
+{
   SOCKET sock = init_connection();
   char buffer[BUF_SIZE];
   /* the index for the array */
@@ -33,7 +37,8 @@ static void app(void) {
 
   fd_set rdfs;
 
-  while (1) {
+  while (1)
+  {
     int i = 0;
     FD_ZERO(&rdfs);
 
@@ -44,34 +49,41 @@ static void app(void) {
     FD_SET(sock, &rdfs);
 
     /* add socket of each client */
-    for (i = 0; i < actual; i++) {
+    for (i = 0; i < actual; i++)
+    {
       FD_SET(clients[i].sock, &rdfs);
     }
 
-    if (select(max + 1, &rdfs, NULL, NULL, NULL) == -1) {
+    if (select(max + 1, &rdfs, NULL, NULL, NULL) == -1)
+    {
       perror("select()");
       exit(errno);
     }
 
     /* something from standard input : i.e keyboard */
-    if (FD_ISSET(STDIN_FILENO, &rdfs)) {
+    if (FD_ISSET(STDIN_FILENO, &rdfs))
+    {
 
       printf("stoping...\n");
       /* stop process when type on keyboard */
       break;
-    } else if (FD_ISSET(sock, &rdfs)) {
+    }
+    else if (FD_ISSET(sock, &rdfs))
+    {
       /* new client */
       printf("New client\n");
       SOCKADDR_IN csin = {0};
       socklen_t sinsize = sizeof csin;
       int csock = accept(sock, (SOCKADDR *)&csin, &sinsize);
-      if (csock == SOCKET_ERROR) {
+      if (csock == SOCKET_ERROR)
+      {
         perror("accept()");
         continue;
       }
 
       /* after connecting the client sends its name */
-      if (read_client(csock, buffer) == -1) {
+      if (read_client(csock, buffer) == -1)
+      {
         /* disconnected */
         continue;
       }
@@ -86,26 +98,145 @@ static void app(void) {
       printf("%s\n", c.name);
       clients[actual] = c;
       actual++;
-    } else {
+    }
+    else
+    {
       printf("Client talking\n");
       int i = 0;
-      for (i = 0; i < actual; i++) {
+      for (i = 0; i < actual; i++)
+      {
         /* a client is talking */
-        if (FD_ISSET(clients[i].sock, &rdfs)) {
-          Client client = clients[i];
+        if (FD_ISSET(clients[i].sock, &rdfs))
+        {
+          Client *client = &clients[i];
           int c = read_client(clients[i].sock, buffer);
+
+          ParsedMessage *props = (ParsedMessage *)malloc(sizeof(ParsedMessage));
+          extract_props(buffer, props);
+
           /* client disconnected */
-          if (c == 0) {
+          if (c == 0)
+          {
             closesocket(clients[i].sock);
             remove_client(clients, i, &actual);
-            strncpy(buffer, client.name, BUF_SIZE - 1);
+            strncpy(buffer, client->name, BUF_SIZE - 1);
             strncat(buffer, " disconnected !", BUF_SIZE - strlen(buffer) - 1);
-            send_message_to_all_clients(clients, client, actual, buffer, 1);
-          } else {
+            send_message_to_all_clients(clients, *client, actual, buffer, 1);
+          }
+          else
+          {
+            // ----------------------------------------------------------------------------------//
             // Handle sending message to specific clients.
-            Client choosed_client;
-            send_message_to_specific_client(choosed_client, client, actual, buffer, 0);
-      printf("%s\n", buffer);
+            // args : player to challenge
+            if ((strcmp(props->command, "challenge") == 0) && (props->argc >= 1))
+            {
+              if (client->game == NULL)
+              {
+                int clientFound = 0;
+                for (int j = 0; j < MAX_CLIENTS; ++j)
+                {
+                  if (strcmp(clients[j].name, props->argv[0]) == 0)
+                  {
+                    // the challenged client is found
+                    clientFound = 1;
+                    client->challenged = &clients[j];
+                    if (clients[j].challenged == client)
+                    {
+                      // launch a game
+                      Game *game = (Game *)malloc(sizeof(Game));
+                      game->capturedSeedClient1 = 0;
+                      game->client1 = client;
+                      game->capturedSeedClient2 = 0;
+                      game->client2 = &clients[j];
+                      for (int k = 0; k < AWALE_BOARD_SIZE; k++)
+                      {
+                        game->awaleBoard[k] = 4;
+                      }
+
+                      clients[j].game = client->game = game;
+
+                      // Notify the players that the game is starting
+                      char message[2048];
+                      snprintf(message, sizeof(message),
+                               "The awale game versus %s has started.",
+                               clients[j].name);
+
+                      send_message_to_specific_client(*client, message, 1);
+
+                      snprintf(message, sizeof(message),
+                               "The awale game versus %s has started.",
+                               client->name);
+
+                      send_message_to_specific_client(clients[j], message, 1);
+                    }
+                    else
+                    {
+                      clients[j].challenger = client;
+                      char message[2048];
+                      snprintf(message, sizeof(message),
+                               "Challenge sent to player %s.",
+                               props->argv[0]);
+
+                      send_message_to_specific_client(*client, message, 1);
+
+                      snprintf(message, sizeof(message),
+                               "Challenge received from player %s.",
+                               client->name);
+
+                      send_message_to_specific_client(clients[j], message, 1);
+                    }
+                  }
+                }
+                if (!clientFound)
+                {
+                  char message[2048];
+                  snprintf(message, sizeof(message),
+                           "The player %s is not connected.",
+                           props->argv[0]);
+
+                  send_message_to_specific_client(*client, message, 1);
+                }
+              }
+            }
+            // ----------------------------------------------------------------------------------//
+            // args : index of the hole to play
+            else if ((strcmp(props->command, "play") == 0) && (props->argc >= 1))
+            {
+              printf("playyying pokemon go everyday");
+            }
+            // ----------------------------------------------------------------------------------//
+            // args : none
+            else if ((strcmp(props->command, "ff") == 0) && (props->argc >= 1))
+            {
+              if (client->game == NULL)
+              {
+                send_message_to_specific_client(*client, "You are currently not in a game.", 1);
+              }
+              else
+              {
+                Game* currentGame = client->game;
+                Client * opponent = currentGame->client1 != client ? currentGame->client1 : currentGame->client2;
+                char message[2048];
+                  snprintf(message, sizeof(message),
+                           "The player %s has forfeited. You won !",
+                           client->name);
+
+                  send_message_to_specific_client(*opponent, message, 1);
+                
+                  send_message_to_specific_client(*client, "You forfeited ...", 1);
+
+                  client->game = NULL;
+                  opponent->game = NULL;
+                  client->challenged = NULL;
+                  opponent->challenged = NULL;
+                  free(currentGame);
+              }
+            }
+            // ----------------------------------------------------------------------------------//
+            else
+            {
+              printf("Unknown command : %s \n", buffer);
+            }
           }
           break;
         }
@@ -117,14 +248,17 @@ static void app(void) {
   end_connection(sock);
 }
 
-static void clear_clients(Client *clients, int actual) {
+static void clear_clients(Client *clients, int actual)
+{
   int i = 0;
-  for (i = 0; i < actual; i++) {
+  for (i = 0; i < actual; i++)
+  {
     closesocket(clients[i].sock);
   }
 }
 
-static void remove_client(Client *clients, int to_remove, int *actual) {
+static void remove_client(Client *clients, int to_remove, int *actual)
+{
   /* we remove the client in the array */
   memmove(clients + to_remove, clients + to_remove + 1,
           (*actual - to_remove - 1) * sizeof(Client));
@@ -134,14 +268,18 @@ static void remove_client(Client *clients, int to_remove, int *actual) {
 
 static void send_message_to_all_clients(Client *clients, Client sender,
                                         int actual, const char *buffer,
-                                        char from_server) {
+                                        char from_server)
+{
   int i = 0;
   char message[BUF_SIZE];
   message[0] = 0;
-  for (i = 0; i < actual; i++) {
+  for (i = 0; i < actual; i++)
+  {
     /* we don't send message to the sender */
-    if (sender.sock != clients[i].sock) {
-      if (from_server == 0) {
+    if (sender.sock != clients[i].sock)
+    {
+      if (from_server == 0)
+      {
         strncpy(message, sender.name, BUF_SIZE - 1);
         strncat(message, " : ", sizeof message - strlen(message) - 1);
       }
@@ -151,28 +289,22 @@ static void send_message_to_all_clients(Client *clients, Client sender,
   }
 }
 
-static void send_message_to_specific_client(Client client, Client sender,
-                                        int actual, const char *buffer,
-                                        char from_server) {
-  int i = 0;
-  char message[BUF_SIZE];
-  message[0] = 0;
-  if (sender.sock != client.sock)
-  {
-      if (from_server == 0) {
-        strncpy(message, sender.name, BUF_SIZE - 1);
-        strncat(message, " : ", sizeof message - strlen(message) - 1);
-      }
-      strncat(message, buffer, sizeof message - strlen(message) - 1);
-      write_client(client.sock, message);
-  }
+static void send_message_to_specific_client(Client client, const char *buffer,
+                                            char from_server)
+{
+  Client *client_arr_adapter = (Client *)malloc(sizeof(Client));
+  client_arr_adapter[0] = client;
+  Client dummy_client;
+  send_message_to_all_clients(client_arr_adapter, dummy_client, 1, buffer, from_server);
 }
 
-static int init_connection(void) {
+static int init_connection(void)
+{
   SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
   SOCKADDR_IN sin = {0};
 
-  if (sock == INVALID_SOCKET) {
+  if (sock == INVALID_SOCKET)
+  {
     perror("socket()");
     exit(errno);
   }
@@ -181,12 +313,14 @@ static int init_connection(void) {
   sin.sin_port = htons(PORT);
   sin.sin_family = AF_INET;
 
-  if (bind(sock, (SOCKADDR *)&sin, sizeof sin) == SOCKET_ERROR) {
+  if (bind(sock, (SOCKADDR *)&sin, sizeof sin) == SOCKET_ERROR)
+  {
     perror("bind()");
     exit(errno);
   }
 
-  if (listen(sock, MAX_CLIENTS) == SOCKET_ERROR) {
+  if (listen(sock, MAX_CLIENTS) == SOCKET_ERROR)
+  {
     perror("listen()");
     exit(errno);
   }
@@ -196,10 +330,12 @@ static int init_connection(void) {
 
 static void end_connection(int sock) { closesocket(sock); }
 
-static int read_client(SOCKET sock, char *buffer) {
+static int read_client(SOCKET sock, char *buffer)
+{
   int n = 0;
 
-  if ((n = recv(sock, buffer, BUF_SIZE - 1, 0)) < 0) {
+  if ((n = recv(sock, buffer, BUF_SIZE - 1, 0)) < 0)
+  {
     perror("recv()");
     /* if recv error we disonnect the client */
     n = 0;
@@ -210,29 +346,71 @@ static int read_client(SOCKET sock, char *buffer) {
   return n;
 }
 
-static void extract_command(const char *src, char *cmd) {
-  if (strlen(src) <= 0) return;
+static void extract_props(const char *src, ParsedMessage *msg)
+{
+  if (!src || !msg || *src == '\0')
+    return;
 
-  int i = 0;
-  char c;
-  do 
-  { 
-    c = src[i];
-    cmd[i] = c;
-    i++;
-  } while(c != ' ');
+  char *copy = strdup(src);
+  if (!copy)
+    return;
 
-  cmd[i] = '\0';
+  char *token = strtok(copy, " ");
+  if (!token)
+  {
+    free(copy);
+    return;
+  }
+
+  msg->command = strdup(token);
+  msg->argc = 0;
+  msg->argv = NULL;
+
+  // Récupération des arguments restants
+  while ((token = strtok(NULL, " ")) != NULL)
+  {
+    char **tmp = realloc(msg->argv, sizeof(char *) * (msg->argc + 1));
+    if (!tmp)
+    {
+      // En cas d’erreur realloc, on libère ce qui a été alloué avant de sortir
+      for (int i = 0; i < msg->argc; i++)
+        free(msg->argv[i]);
+      free(msg->argv);
+      free(msg->command);
+      free(copy);
+      return;
+    }
+    msg->argv = tmp;
+    msg->argv[msg->argc] = strdup(token);
+    msg->argc++;
+  }
+
+  free(copy);
 }
 
-static void write_client(SOCKET sock, const char *buffer) {
-  if (send(sock, buffer, strlen(buffer), 0) < 0) {
+static void free_parsed_message(ParsedMessage *msg)
+{
+  if (!msg)
+    return;
+  free(msg->command);
+  for (int i = 0; i < msg->argc; i++)
+  {
+    free(msg->argv[i]);
+  }
+  free(msg->argv);
+}
+
+static void write_client(SOCKET sock, const char *buffer)
+{
+  if (send(sock, buffer, strlen(buffer), 0) < 0)
+  {
     perror("send()");
     exit(errno);
   }
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
   printf("Initializing server...\n");
   init();
 
