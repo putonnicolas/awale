@@ -57,6 +57,7 @@ struct Game
   not null and client2 != null : in fight with challenger
   */
   Client *client2;
+  Client* currentPlayer;
   int capturedSeedClient2;
   int awaleBoard[AWALE_BOARD_SIZE];
 };
@@ -82,6 +83,7 @@ static void clear_clients(Client *clients, int actual);
 static void extract_props(const char *src, ParsedMessage *msg);
 static void create_challlenge(Client *client, Client *clients, ParsedMessage *props);
 static void forfeit(Client *client);
+static void play_awale(Client* client, ParsedMessage* props);
 
 
 #endif /* guard */

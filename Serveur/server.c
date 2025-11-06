@@ -127,15 +127,15 @@ static void app(void)
           {
             // ----------------------------------------------------------------------------------//
             // args : player to challenge
-            if ((strcmp(props->command, "challenge") == 0) && (props->argc >= 1))
+            if ((strcmp(props->command, "challenge") == 0) && (props->argc == 1))
             {
               create_challlenge(client, clients, props);
             }
             // ----------------------------------------------------------------------------------//
             // args : index of the hole to play
-            else if ((strcmp(props->command, "play") == 0) && (props->argc >= 1))
+            else if ((strcmp(props->command, "play") == 0) && (props->argc == 1))
             {
-              printf("playyying pokemon go everyday");
+              play_awale(client, props);
             }
             // ----------------------------------------------------------------------------------//
             // args : none
@@ -146,7 +146,7 @@ static void app(void)
             // ----------------------------------------------------------------------------------//
             else
             {
-              printf("Unknown command : %s \n", buffer);
+              printf("Unknown command : %s, or missing arguments.", buffer);
             }
           }
           break;
@@ -356,6 +356,7 @@ static void create_challlenge(Client *client, Client *clients, ParsedMessage *pr
           game->client1 = client;
           game->capturedSeedClient2 = 0;
           game->client2 = &clients[j];
+          game->currentPlayer = client;
           for (int k = 0; k < AWALE_BOARD_SIZE; k++)
           {
             game->awaleBoard[k] = 4;
@@ -433,4 +434,50 @@ static void forfeit(Client *client)
     opponent->challenged = NULL;
     free(currentGame);
   }
+}
+
+// ---------------------------------------------------------------- //
+static void play_awale(Client *client, ParsedMessage *props)
+{
+  Game *game = client->game;
+  if (game->currentPlayer != client)
+  {
+    send_message_to_specific_client(*client, "It's not your turn !", 1);
+    return;
+  }
+
+
+  // get the parameters of the shot
+  int caseIndex = atoi(props->argv[0]);
+
+  // handle errors
+  if (caseIndex < 0 || caseIndex >= (AWALE_BOARD_SIZE / 2))
+  {
+    send_message_to_specific_client(*client, "The case index should be between 0 and 5... try again.", 1);
+    return;
+  }
+
+  // is the player the client1 ?
+  short client1 = 1;
+  // update the board associated with the game
+  // client1 caseIndex goes from 0 to 5
+  // however client2 caseIndex goes from 6 to 11
+  // but both player choose between 0 and 6 so translation is needed
+  if (client == game->client2)
+  {
+    caseIndex = (AWALE_BOARD_SIZE - 1) - caseIndex;
+    client1 = 0;
+  }
+
+  int nbSeedsOnChooseCase = game->awaleBoard[caseIndex];
+  game->awaleBoard[caseIndex] = 0;
+
+  // add seeds to concerned holes
+  for (int i = 0; i < nbSeedsOnChooseCase; ++i)
+  {
+    int currentIndex = (caseIndex + i + 1) % AWALE_BOARD_SIZE;
+    game->awaleBoard[currentIndex]++;
+  }
+
+  // send the new version to both players
 }
