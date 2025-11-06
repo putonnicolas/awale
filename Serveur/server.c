@@ -126,77 +126,10 @@ static void app(void)
           else
           {
             // ----------------------------------------------------------------------------------//
-            // Handle sending message to specific clients.
             // args : player to challenge
             if ((strcmp(props->command, "challenge") == 0) && (props->argc >= 1))
             {
-              if (client->game == NULL)
-              {
-                int clientFound = 0;
-                for (int j = 0; j < MAX_CLIENTS; ++j)
-                {
-                  if (strcmp(clients[j].name, props->argv[0]) == 0)
-                  {
-                    // the challenged client is found
-                    clientFound = 1;
-                    client->challenged = &clients[j];
-                    if (clients[j].challenged == client)
-                    {
-                      // launch a game
-                      Game *game = (Game *)malloc(sizeof(Game));
-                      game->capturedSeedClient1 = 0;
-                      game->client1 = client;
-                      game->capturedSeedClient2 = 0;
-                      game->client2 = &clients[j];
-                      for (int k = 0; k < AWALE_BOARD_SIZE; k++)
-                      {
-                        game->awaleBoard[k] = 4;
-                      }
-
-                      clients[j].game = client->game = game;
-
-                      // Notify the players that the game is starting
-                      char message[2048];
-                      snprintf(message, sizeof(message),
-                               "The awale game versus %s has started.",
-                               clients[j].name);
-
-                      send_message_to_specific_client(*client, message, 1);
-
-                      snprintf(message, sizeof(message),
-                               "The awale game versus %s has started.",
-                               client->name);
-
-                      send_message_to_specific_client(clients[j], message, 1);
-                    }
-                    else
-                    {
-                      clients[j].challenger = client;
-                      char message[2048];
-                      snprintf(message, sizeof(message),
-                               "Challenge sent to player %s.",
-                               props->argv[0]);
-
-                      send_message_to_specific_client(*client, message, 1);
-
-                      snprintf(message, sizeof(message),
-                               "Challenge received from player %s.",
-                               client->name);
-
-                      send_message_to_specific_client(clients[j], message, 1);
-                    }
-                  }
-                }
-                if (!clientFound)
-                {
-                  char message[2048];
-                  snprintf(message, sizeof(message),
-                           "The player %s is not connected.",
-                           props->argv[0]);
-
-                  send_message_to_specific_client(*client, message, 1);
-                }
-              }
+              create_challlenge(client, clients, props);
             }
             // ----------------------------------------------------------------------------------//
             // args : index of the hole to play
@@ -206,31 +139,9 @@ static void app(void)
             }
             // ----------------------------------------------------------------------------------//
             // args : none
-            else if ((strcmp(props->command, "ff") == 0) && (props->argc >= 1))
+            else if ((strcmp(props->command, "ff") == 0) && (props->argc == 0))
             {
-              if (client->game == NULL)
-              {
-                send_message_to_specific_client(*client, "You are currently not in a game.", 1);
-              }
-              else
-              {
-                Game* currentGame = client->game;
-                Client * opponent = currentGame->client1 != client ? currentGame->client1 : currentGame->client2;
-                char message[2048];
-                  snprintf(message, sizeof(message),
-                           "The player %s has forfeited. You won !",
-                           client->name);
-
-                  send_message_to_specific_client(*opponent, message, 1);
-                
-                  send_message_to_specific_client(*client, "You forfeited ...", 1);
-
-                  client->game = NULL;
-                  opponent->game = NULL;
-                  client->challenged = NULL;
-                  opponent->challenged = NULL;
-                  free(currentGame);
-              }
+              forfeit(client);
             }
             // ----------------------------------------------------------------------------------//
             else
@@ -421,4 +332,105 @@ int main(int argc, char **argv)
   end();
 
   return EXIT_SUCCESS;
+}
+
+// ---------------------------------------------------------------- //
+// Creates a challenge from the client to the challenged client and sends it to the challenged client
+static void create_challlenge(Client *client, Client *clients, ParsedMessage *props)
+{
+  if (client->game == NULL)
+  {
+    int clientFound = 0;
+    for (int j = 0; j < MAX_CLIENTS; ++j)
+    {
+      if (strcmp(clients[j].name, props->argv[0]) == 0)
+      {
+        // the challenged client is found
+        clientFound = 1;
+        client->challenged = &clients[j];
+        if (clients[j].challenged == client)
+        {
+          // launch a game
+          Game *game = (Game *)malloc(sizeof(Game));
+          game->capturedSeedClient1 = 0;
+          game->client1 = client;
+          game->capturedSeedClient2 = 0;
+          game->client2 = &clients[j];
+          for (int k = 0; k < AWALE_BOARD_SIZE; k++)
+          {
+            game->awaleBoard[k] = 4;
+          }
+
+          clients[j].game = client->game = game;
+
+          // Notify the players that the game is starting
+          char message[2048];
+          snprintf(message, sizeof(message),
+                   "The awale game versus %s has started.",
+                   clients[j].name);
+
+          send_message_to_specific_client(*client, message, 1);
+
+          snprintf(message, sizeof(message),
+                   "The awale game versus %s has started.",
+                   client->name);
+
+          send_message_to_specific_client(clients[j], message, 1);
+        }
+        else
+        {
+          clients[j].challenger = client;
+          char message[2048];
+          snprintf(message, sizeof(message),
+                   "Challenge sent to player %s.",
+                   props->argv[0]);
+
+          send_message_to_specific_client(*client, message, 1);
+
+          snprintf(message, sizeof(message),
+                   "Challenge received from player %s.",
+                   client->name);
+
+          send_message_to_specific_client(clients[j], message, 1);
+        }
+      }
+    }
+    if (!clientFound)
+    {
+      char message[2048];
+      snprintf(message, sizeof(message),
+               "The player %s is not connected.",
+               props->argv[0]);
+
+      send_message_to_specific_client(*client, message, 1);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- //
+static void forfeit(Client *client)
+{
+  if (client->game == NULL)
+  {
+    send_message_to_specific_client(*client, "You are currently not in a game.", 1);
+  }
+  else
+  {
+    Game *currentGame = client->game;
+    Client *opponent = currentGame->client1 != client ? currentGame->client1 : currentGame->client2;
+    char message[2048];
+    snprintf(message, sizeof(message),
+             "The player %s has forfeited. You won !",
+             client->name);
+
+    send_message_to_specific_client(*opponent, message, 1);
+
+    send_message_to_specific_client(*client, "You forfeited ...", 1);
+
+    client->game = NULL;
+    opponent->game = NULL;
+    client->challenged = NULL;
+    opponent->challenged = NULL;
+    free(currentGame);
+  }
 }

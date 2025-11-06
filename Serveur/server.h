@@ -80,5 +80,8 @@ static void send_message_to_specific_client(Client client, const char *buffer, c
 static void remove_client(Client *clients, int to_remove, int *actual);
 static void clear_clients(Client *clients, int actual);
 static void extract_props(const char *src, ParsedMessage *msg);
+static void create_challlenge(Client *client, Client *clients, ParsedMessage *props);
+static void forfeit(Client *client);
+
 
 #endif /* guard */
