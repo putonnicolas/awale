@@ -1,6 +1,6 @@
 #ifndef SERVER_H
 #define SERVER_H
-#define AWALE_BOARD_SIZE 12
+#define HALF_AWALE_BOARD_SIZE 6
 
 #ifdef WIN32
 
@@ -35,31 +35,31 @@ typedef struct in_addr IN_ADDR;
 
 #define BUF_SIZE 1024
 
-typedef struct Client Client; 
-typedef struct Game Game; 
+typedef struct Client Client;
+typedef struct Game Game;
 typedef struct ParsedMessage ParsedMessage;
 
-struct Client {
-    SOCKET sock;
-    char name[BUF_SIZE];
-    Client* challenged;
-    Client* challenger;
-    Game* game;
+struct Client
+{
+  SOCKET sock;
+  char name[BUF_SIZE];
+  Client *challenged;
+  Client *challenger;
+  Game *game;
 };
 
 struct Game
 {
-  int capturedSeedClient1;
-  Client *client1; /*
-  Client1 is always the challenger.
-  null : not in fight at all,
-  not null and client2 = null : not in fight, challenger waiting for fight
-  not null and client2 != null : in fight with challenger
-  */
-  Client *client2;
-  Client* currentPlayer;
-  int capturedSeedClient2;
-  int awaleBoard[AWALE_BOARD_SIZE];
+  ; /*
+    Client1 is always the challenger.
+    null : not in fight at all,
+    not null and client2 = null : not in fight, challenger waiting for fight
+    not null and client2 != null : in fight with challenger
+    */
+  Client *clients[2];
+  Client *currentPlayer;
+  int halfAwaleBoards[2][HALF_AWALE_BOARD_SIZE];
+  int capturedSeeds[2];
 };
 
 struct ParsedMessage
@@ -69,7 +69,14 @@ struct ParsedMessage
   int argc;
 };
 
-static void init(void);
+typedef enum {
+  NORMAL,
+  START,
+  ENDGAME
+} EndOfTurnMessageMode;
+
+static void
+init(void);
 static void end(void);
 static void app(void);
 static int init_connection(void);
@@ -83,7 +90,7 @@ static void clear_clients(Client *clients, int actual);
 static void extract_props(const char *src, ParsedMessage *msg);
 static void create_challlenge(Client *client, Client *clients, ParsedMessage *props);
 static void forfeit(Client *client);
-static void play_awale(Client* client, ParsedMessage* props);
-
+static void play_awale(Client *client, ParsedMessage *props);
+static void sendEndOfTurnMessage(Game *game, EndOfTurnMessageMode modes);
 
 #endif /* guard */
