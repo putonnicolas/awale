@@ -92,5 +92,6 @@ static void create_challlenge(Client *client, Client *clients, ParsedMessage *pr
 static void forfeit(Client *client);
 static void play_awale(Client *client, ParsedMessage *props);
 static void sendEndOfTurnMessage(Game *game, EndOfTurnMessageMode modes);
+static void list(Client* client, Client *clients, int nbClients);
 
 #endif /* guard */

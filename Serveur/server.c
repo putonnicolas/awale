@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <string.h>
 
 #include "server.h"
@@ -142,6 +143,10 @@ static void app(void)
             else if ((strcmp(props->command, "ff") == 0) && (props->argc == 0))
             {
               forfeit(client);
+            }
+            else if ((strcmp(props->command, "list") == 0) && (props->argc == 0))
+            {
+              list(client, clients, actual);
             }
             // ----------------------------------------------------------------------------------//
             else
@@ -356,7 +361,12 @@ static void create_challlenge(Client *client, Client *clients, ParsedMessage *pr
           game->capturedSeeds[1] = 0;
           game->clients[0] = client;
           game->clients[1] = &clients[j];
-          game->currentPlayer = client;
+
+          // Random choice of the first player
+          srand(time(NULL));
+          int starterIndex = rand() % 2;
+          printf("Idx : %d\n", starterIndex);
+          game->currentPlayer = game->clients[starterIndex];
           for (int k = 0; k < HALF_AWALE_BOARD_SIZE; k++)
           {
             game->halfAwaleBoards[0][k] = 4;
@@ -434,6 +444,8 @@ static void forfeit(Client *client)
     opponent->game = NULL;
     client->challenged = NULL;
     opponent->challenged = NULL;
+    client->challenger = NULL;
+    opponent->challenger = NULL;
     free(currentGame);
   }
 }
@@ -585,4 +597,43 @@ void sendEndOfTurnMessage(Game *game, EndOfTurnMessageMode mode)
     // Envoi du message final
     send_message_to_specific_client(*client, message, 1);
   }
+}
+
+// ---------------------------------------------------- //
+
+static void list(Client *client, Client *clients, int nbClients)
+{
+  char message[2048];
+  char buffer[2048];
+
+  snprintf(message, sizeof(message),
+           "\nListe des joueurs actuellement connectés :\n");
+
+  int found = 0;
+  for (int i = 0; i < nbClients; i++)
+  {
+    if (clients[i].sock != INVALID_SOCKET &&
+        strlen(clients[i].name) > 0 &&
+        strcmp(client->name, clients[i].name) != 0)
+    {
+      found = 1;
+      snprintf(buffer, sizeof(buffer), "  - %s", clients[i].name);
+      strncat(message, buffer, sizeof(message) - strlen(message) - 1);
+
+      printf("i : %d\n", i);
+      if (clients[i].game != NULL)
+      {
+        strncat(message, "\t(in game)", sizeof(message) - strlen(message) - 1);
+      }
+
+      strncat(message, "\n", sizeof(message) - strlen(message) - 1);
+    }
+  }
+
+  if (!found)
+    strncat(message, "  Aucun autre joueur connecté.\n", sizeof(message) - strlen(message) - 1);
+
+  strncat(message, "\n", sizeof(message) - strlen(message) - 1);
+
+  send_message_to_specific_client(*client, message, 1);
 }
