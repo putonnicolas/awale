@@ -1,0 +1,3 @@
+- refacto tab clietns en client*
+- if pour empecher 2 clients d'avoir meme nom
+- persistence sur une jour precedement connecté + bio
