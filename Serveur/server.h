@@ -46,6 +46,7 @@ struct Client
   Client *challenged;
   Client *challenger;
   Game *game;
+  Game *gameToWatch;
 };
 
 struct Game
@@ -58,6 +59,8 @@ struct Game
     */
   Client *clients[2];
   Client *currentPlayer;
+  Client *watchers[MAX_CLIENTS]; 
+  int nbWatchers;
   int halfAwaleBoards[2][HALF_AWALE_BOARD_SIZE];
   int capturedSeeds[2];
 };
@@ -93,5 +96,11 @@ static void forfeit(Client *client);
 static void play_awale(Client *client, ParsedMessage *props);
 static void sendEndOfTurnMessage(Game *game, EndOfTurnMessageMode modes);
 static void list(Client* client, Client *clients, int nbClients);
+static void watch(Client *client, Client *clients, ParsedMessage *props);
+static void stopwatch(Client *client);
+static void remove_watcher(Game *game, int index);
+static void remove_specific_watcher(Client *client);
+static void help(Client *client);
+static void sendEndOfTurnMessageToWatchers(Game *game, EndOfTurnMessageMode mode);
 
 #endif /* guard */

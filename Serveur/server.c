@@ -139,14 +139,32 @@ static void app(void)
               play_awale(client, props);
             }
             // ----------------------------------------------------------------------------------//
-            // args : none
             else if ((strcmp(props->command, "ff") == 0) && (props->argc == 0))
             {
               forfeit(client);
             }
+            // ----------------------------------------------------------------------------------//
             else if ((strcmp(props->command, "list") == 0) && (props->argc == 0))
             {
               list(client, clients, actual);
+            }
+            // ----------------------------------------------------------------------------------//
+            // args : none
+            else if ((strcmp(props->command, "help") == 0) && (props->argc == 0))
+            {
+              help(client);
+            }
+            // ----------------------------------------------------------------------------------//
+            // args : name of the player to watch
+            else if ((strcmp(props->command, "watch") == 0) && (props->argc == 1))
+            {
+              watch(client, clients, props);
+            }
+            // ----------------------------------------------------------------------------------//
+            // args : name of the player to watch
+            else if ((strcmp(props->command, "stopwatch") == 0) && (props->argc == 0))
+            {
+              stopwatch(client);
             }
             // ----------------------------------------------------------------------------------//
             else
@@ -155,6 +173,14 @@ static void app(void)
             }
           }
           break;
+
+          // free the props
+          free(props->command);
+          for (int i = 0; i < props->argc; i++)
+          {
+            free(props->argv[i]);
+          }
+          free(props);
         }
       }
     }
@@ -173,13 +199,20 @@ static void clear_clients(Client *clients, int actual)
   }
 }
 
+// ---------------------------------------------------- //
 static void remove_client(Client *clients, int to_remove, int *actual)
 {
-  /* we remove the client in the array */
+  Client *removedClient = &clients[to_remove];
+
+  printf("remove \n");
+  // Retirer le client des watchers de toutes les games
+  remove_specific_watcher(removedClient);
+  
+  // On retire le client du tableau principal
   memmove(clients + to_remove, clients + to_remove + 1,
-          (*actual - to_remove - 1) * sizeof(Client));
-  /* number client - 1 */
-  (*actual)--;
+    (*actual - to_remove - 1) * sizeof(Client));
+    (*actual)--;
+    printf("end remove \n");
 }
 
 static void send_message_to_all_clients(Client *clients, Client sender,
@@ -205,11 +238,11 @@ static void send_message_to_all_clients(Client *clients, Client sender,
   }
 }
 
+// ---------------------------------------------------- //
 static void send_message_to_specific_client(Client client, const char *buffer,
                                             char from_server)
 {
-  Client *client_arr_adapter = (Client *)malloc(sizeof(Client));
-  client_arr_adapter[0] = client;
+  Client client_arr_adapter[1] = {client};
   Client dummy_client;
   send_message_to_all_clients(client_arr_adapter, dummy_client, 1, buffer, from_server);
 }
@@ -389,6 +422,7 @@ static void create_challlenge(Client *client, Client *clients, ParsedMessage *pr
 
           send_message_to_specific_client(clients[j], message, 1);
           sendEndOfTurnMessage(game, START);
+          sendEndOfTurnMessageToWatchers(game, START);
         }
         else
         {
@@ -446,6 +480,7 @@ static void forfeit(Client *client)
     opponent->challenged = NULL;
     client->challenger = NULL;
     opponent->challenger = NULL;
+    currentGame->nbWatchers = 0;
     free(currentGame);
   }
 }
@@ -521,6 +556,7 @@ static void play_awale(Client *client, ParsedMessage *props)
   {
     char winnerIndex = game->capturedSeeds[1] > game->capturedSeeds[0];
     sendEndOfTurnMessage(game, ENDGAME);
+    sendEndOfTurnMessageToWatchers(game, ENDGAME);
 
     send_message_to_specific_client(*game->clients[winnerIndex], "Félications ! Vous avez battu à plattes coutures votre adversaire !f", 1);
     send_message_to_specific_client(*game->clients[(winnerIndex + 1) % 2], "Dommage... vous avez perdu...", 1);
@@ -530,6 +566,7 @@ static void play_awale(Client *client, ParsedMessage *props)
   {
     game->currentPlayer = game->clients[(clientIndex + 1) % 2];
     sendEndOfTurnMessage(game, NORMAL);
+    sendEndOfTurnMessageToWatchers(game, NORMAL);
   }
 }
 
@@ -599,6 +636,75 @@ void sendEndOfTurnMessage(Game *game, EndOfTurnMessageMode mode)
   }
 }
 
+static void sendEndOfTurnMessageToWatchers(Game *game, EndOfTurnMessageMode mode)
+{
+  if (game->nbWatchers == 0)
+    return;
+
+  char message[2048];
+  char buffer[2048];
+
+  // Construction du message de base (même visuel que les joueurs)
+  if (mode == START)
+  {
+    snprintf(message, sizeof(message),
+             "=== Début du tour ===\n"
+             "C'est le tour de : %s\n\n",
+             game->currentPlayer->name);
+  }
+  else
+  {
+    snprintf(message, sizeof(message),
+             "=== Fin du tour ===\n"
+             "C'est le tour de : %s\n\n",
+             game->currentPlayer->name);
+  }
+
+  strncat(message, "Plateau actuel :\n\n", sizeof(message) - strlen(message) - 1);
+
+  // Ligne du haut (client2)
+  strncat(message, "  ", sizeof(message) - strlen(message) - 1);
+  for (int j = HALF_AWALE_BOARD_SIZE - 1; j >= 0; j--)
+  {
+    snprintf(buffer, sizeof(buffer), "| %2d ", game->halfAwaleBoards[1][j]);
+    strncat(message, buffer, sizeof(message) - strlen(message) - 1);
+  }
+  strncat(message, "|\n", sizeof(message) - strlen(message) - 1);
+
+  // Ligne du bas (client1)
+  strncat(message, "  ", sizeof(message) - strlen(message) - 1);
+  for (int j = 0; j < HALF_AWALE_BOARD_SIZE; j++)
+  {
+    snprintf(buffer, sizeof(buffer), "| %2d ", game->halfAwaleBoards[0][j]);
+    strncat(message, buffer, sizeof(message) - strlen(message) - 1);
+  }
+  strncat(message, "|\n", sizeof(message) - strlen(message) - 1);
+
+  // Graines capturées
+  snprintf(buffer, sizeof(buffer), "\nGraines capturées :\n");
+  strncat(message, buffer, sizeof(message) - strlen(message) - 1);
+
+  snprintf(buffer, sizeof(buffer), "  %s : %d\n",
+           game->clients[0]->name, game->capturedSeeds[0]);
+  strncat(message, buffer, sizeof(message) - strlen(message) - 1);
+
+  snprintf(buffer, sizeof(buffer), "  %s : %d\n",
+           game->clients[1]->name, game->capturedSeeds[1]);
+  strncat(message, buffer, sizeof(message) - strlen(message) - 1);
+
+  strncat(message, "\n========================\n", sizeof(message) - strlen(message) - 1);
+
+  // Envoi à tous les spectateurs
+  for (int i = 0; i < game->nbWatchers; i++)
+  {
+    Client *watcher = game->watchers[i];
+    if (watcher != NULL && watcher->sock != INVALID_SOCKET)
+    {
+      send_message_to_specific_client(*watcher, message, 1);
+    }
+  }
+}
+
 // ---------------------------------------------------- //
 
 static void list(Client *client, Client *clients, int nbClients)
@@ -620,7 +726,6 @@ static void list(Client *client, Client *clients, int nbClients)
       snprintf(buffer, sizeof(buffer), "  - %s", clients[i].name);
       strncat(message, buffer, sizeof(message) - strlen(message) - 1);
 
-      printf("i : %d\n", i);
       if (clients[i].game != NULL)
       {
         strncat(message, "\t(in game)", sizeof(message) - strlen(message) - 1);
@@ -636,4 +741,104 @@ static void list(Client *client, Client *clients, int nbClients)
   strncat(message, "\n", sizeof(message) - strlen(message) - 1);
 
   send_message_to_specific_client(*client, message, 1);
+}
+
+// ---------------------------------------------------- //
+static void help(Client *client)
+{
+  char message[2048];
+  snprintf(message, sizeof(message),
+           "\n--- Liste des commandes disponibles ---\n"
+           "  list                  → Affiche la liste des joueurs connectés\n"
+           "  challenge <nom>       → Défie un joueur en duel\n"
+           "  play <index>          → Joue un coup (index du trou à jouer)\n"
+           "  ff                    → Abandonne la partie en cours\n"
+           "  watch <nom>           → Observe la partie d’un joueur\n"
+           "  stopwatch             → Arrête d'observer la partie actuellement observée\n"
+           "  say <message>         → Envoie un message à tout les joueurs connectés\n"
+           "  help                  → Affiche cette aide\n"
+           "\n----------------------------------------\n");
+
+  send_message_to_specific_client(*client, message, 1);
+}
+
+// ---------------------------------------------------- //
+static void watch(Client *client, Client *clients, ParsedMessage *props)
+{
+  short clientFound;
+  for (int i = 0; i < MAX_CLIENTS; ++i)
+  {
+    if (strcmp(clients[i].name, props->argv[0]) == 0)
+    {
+      if (clients[i].game != NULL)
+      {
+        // the client to watch is found
+        clientFound = 1;
+        clients[i].game->watchers[clients[i].game->nbWatchers] = client;
+        clients[i].game->nbWatchers++;
+        client->gameToWatch = clients[i].game;
+      }
+    }
+  }
+
+  if (!clientFound)
+  {
+    char message[2048];
+    snprintf(message, sizeof(message),
+             "The player %s is not in game.",
+             props->argv[0]);
+
+    send_message_to_specific_client(*client, message, 1);
+  }
+}
+
+// ---------------------------------------------------- //
+static void stopwatch(Client *client)
+{
+  if (client->gameToWatch == NULL)
+  {
+    send_message_to_specific_client(*client, "You are currently not watching a game.\n", 1);
+    return;
+  }
+
+  Game *game = client->gameToWatch;
+
+  remove_specific_watcher(client);
+  client->gameToWatch = NULL;
+
+  char message[2048];
+  snprintf(message, sizeof(message),
+           "You stopped watching the game of %s and %s.\n",
+           game->clients[0]->name,
+           game->clients[1] ? game->clients[1]->name : "(waiting for opponent)");
+
+  send_message_to_specific_client(*client, message, 1);
+}
+
+// ---------------------------------------------------- //
+static void remove_specific_watcher(Client *client)
+{
+  if (client->gameToWatch != NULL)
+    return;
+
+  for (int i = 0; i < client->gameToWatch->nbWatchers; i++)
+  {
+    if (client->gameToWatch->watchers[i] == client)
+    {
+      remove_watcher(client->gameToWatch, i);
+      break;
+    }
+  }
+}
+
+// ---------------------------------------------------- //
+static void remove_watcher(Game *game, int index)
+{
+  if (index < 0 || index >= game->nbWatchers)
+    return;
+
+  memmove(game->watchers + index,
+          game->watchers + index + 1,
+          (game->nbWatchers - index - 1) * sizeof(Client *));
+  game->nbWatchers--;
 }
