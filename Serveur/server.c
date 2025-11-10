@@ -87,6 +87,16 @@ static void app(void) {
       printf("%s\n", c.name);
       c.challenged = NULL;
       c.challenger = NULL;
+
+      char message[2048];
+      snprintf(message, sizeof(message),
+               "Welcome %s to Online Awale XTrem Experience!\nTo get a list of "
+               "all available commands type [help].\n\nPlayers online : %d.",
+               c.name, actual);
+      send_message_to_specific_client(c, message, 1);
+      if (actual != 0)
+        list(&c, clients, actual);
+
       clients[actual] = c;
       actual++;
     } else {
@@ -327,7 +337,6 @@ static void create_challenge(Client *client, Client *clients,
           // Random choice of the first player
           srand(time(NULL));
           int starterIndex = rand() % 2;
-          printf("Idx : %d\n", starterIndex);
           game->currentPlayer = game->clients[starterIndex];
           for (int k = 0; k < HALF_AWALE_BOARD_SIZE; k++) {
             game->halfAwaleBoards[0][k] = 4;
@@ -601,7 +610,6 @@ static void list(Client *client, Client *clients, int nbClients) {
       snprintf(buffer, sizeof(buffer), "  - %s", clients[i].name);
       strncat(message, buffer, sizeof(message) - strlen(message) - 1);
 
-      printf("i : %d\n", i);
       if (clients[i].game != NULL) {
         strncat(message, "\t(in game)", sizeof(message) - strlen(message) - 1);
       }
