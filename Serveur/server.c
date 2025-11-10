@@ -85,6 +85,8 @@ static void app(void) {
       Client c = {csock};
       strncpy(c.name, buffer, BUF_SIZE - 1);
       printf("%s\n", c.name);
+      c.challenged = NULL;
+      c.challenger = NULL;
       clients[actual] = c;
       actual++;
     } else {
@@ -111,7 +113,7 @@ static void app(void) {
             // args : player to challenge
             if ((strcmp(props->command, "challenge") == 0) &&
                 (props->argc == 1)) {
-              create_challlenge(client, clients, props);
+              create_challenge(client, clients, props);
             }
             // ----------------------------------------------------------------------------------//
             // args : index of the hole to play
@@ -130,6 +132,9 @@ static void app(void) {
             } else if ((strcmp(props->command, "say") == 0) &&
                        (props->argc > 0)) {
               chat(client, clients, actual, props);
+            } else if ((strcmp(props->command, "deny") == 0) &&
+                       (props->argc == 0)) {
+              deny(client);
             }
             // ----------------------------------------------------------------------------------//
             else {
@@ -302,8 +307,8 @@ int main(int argc, char **argv) {
 // ---------------------------------------------------------------- //
 // Creates a challenge from the client to the challenged client and sends it to
 // the challenged client
-static void create_challlenge(Client *client, Client *clients,
-                              ParsedMessage *props) {
+static void create_challenge(Client *client, Client *clients,
+                             ParsedMessage *props) {
   if (client->game == NULL && (strcmp(client->name, props->argv[0]) != 0)) {
     int clientFound = 0;
     for (int j = 0; j < MAX_CLIENTS; ++j) {
@@ -365,6 +370,25 @@ static void create_challlenge(Client *client, Client *clients,
 
       send_message_to_specific_client(*client, message, 1);
     }
+  }
+}
+
+static void deny(Client *client) {
+  if (client->challenger == NULL) {
+    send_message_to_specific_client(*client, "No one has challenged you yet.",
+                                    1);
+  } else {
+
+    char message[2048];
+    snprintf(message, sizeof(message),
+             "The player %s has denied your challenge.", client->name);
+    send_message_to_specific_client(*client->challenger, message, 1);
+
+    snprintf(message, sizeof(message), "You denied %s's challenge.",
+             client->challenger->name);
+    send_message_to_specific_client(*client, message, 1);
+    client->challenger->challenged = NULL;
+    client->challenger = NULL;
   }
 }
 
@@ -483,7 +507,7 @@ void chat(Client *client, Client *otherClients, int clientNb,
 
   for (int i = 0; i < props->argc; i++) {
     strcat(message, props->argv[i]);
-    strcat(message, " " );
+    strcat(message, " ");
   }
 
   for (int i = 1; i < props->argc; i++) {
