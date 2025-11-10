@@ -814,13 +814,14 @@ static void stopwatch(Client *client)
 // ---------------------------------------------------- //
 static void remove_specific_watcher(Client *client)
 {
-  if (client->gameToWatch != NULL)
+  if (client->gameToWatch == NULL)
     return;
 
   for (int i = 0; i < client->gameToWatch->nbWatchers; i++)
   {
     if (client->gameToWatch->watchers[i] == client)
     {
+      printf("i : %d\n", i);
       remove_watcher(client->gameToWatch, i);
       break;
     }
