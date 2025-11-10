@@ -8,13 +8,13 @@
 
 #elif defined(linux)
 
-#include <sys/types.h>
+#include <arpa/inet.h>
+#include <netdb.h> /* gethostbyname */
+#include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#include <sys/types.h>
 #include <unistd.h> /* close */
-#include <netdb.h>  /* gethostbyname */
 #define INVALID_SOCKET -1
 #define SOCKET_ERROR -1
 #define closesocket(s) close(s)
@@ -39,8 +39,7 @@ typedef struct Client Client;
 typedef struct Game Game;
 typedef struct ParsedMessage ParsedMessage;
 
-struct Client
-{
+struct Client {
   SOCKET sock;
   char name[BUF_SIZE];
   Client *challenged;
@@ -49,8 +48,7 @@ struct Client
   Game *gameToWatch;
 };
 
-struct Game
-{
+struct Game {
   ; /*
     Client1 is always the challenger.
     null : not in fight at all,
@@ -65,37 +63,38 @@ struct Game
   int capturedSeeds[2];
 };
 
-struct ParsedMessage
-{
+struct ParsedMessage {
   char *command;
   char **argv;
   int argc;
 };
 
-typedef enum {
-  NORMAL,
-  START,
-  ENDGAME
-} EndOfTurnMessageMode;
+typedef enum { NORMAL, START, ENDGAME } EndOfTurnMessageMode;
 
-static void
-init(void);
+static void init(void);
 static void end(void);
 static void app(void);
 static int init_connection(void);
 static void end_connection(int sock);
 static int read_client(SOCKET sock, char *buffer);
 static void write_client(SOCKET sock, const char *buffer);
-static void send_message_to_all_clients(Client *clients, Client client, int actual, const char *buffer, char from_server);
-static void send_message_to_specific_client(Client client, const char *buffer, char from_server);
+static void send_message_to_all_clients(Client *clients, Client client,
+                                        int actual, const char *buffer,
+                                        char from_server);
+static void send_message_to_specific_client(Client client, const char *buffer,
+                                            char from_server);
 static void remove_client(Client *clients, int to_remove, int *actual);
 static void clear_clients(Client *clients, int actual);
 static void extract_props(const char *src, ParsedMessage *msg);
-static void create_challlenge(Client *client, Client *clients, ParsedMessage *props);
+static void create_challenge(Client *client, Client *clients,
+                              ParsedMessage *props);
+static void deny(Client *client);
 static void forfeit(Client *client);
+static void chat(Client *client, Client *otherClients, int clientNb,
+                 ParsedMessage *props);
 static void play_awale(Client *client, ParsedMessage *props);
 static void sendEndOfTurnMessage(Game *game, EndOfTurnMessageMode modes);
-static void list(Client* client, Client *clients, int nbClients);
+static void list(Client *client, Client *clients, int nbClients);
 static void watch(Client *client, Client *clients, ParsedMessage *props);
 static void stopwatch(Client *client);
 static void remove_watcher(Game *game, int index);
