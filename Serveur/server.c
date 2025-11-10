@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "server.h"
 
@@ -92,18 +93,48 @@ static void app(void) {
       for (i = 0; i < actual; i++) {
         /* a client is talking */
         if (FD_ISSET(clients[i].sock, &rdfs)) {
-          Client client = clients[i];
+          Client *client = &clients[i];
           int c = read_client(clients[i].sock, buffer);
+
+          ParsedMessage *props = (ParsedMessage *)malloc(sizeof(ParsedMessage));
+          extract_props(buffer, props);
+
           /* client disconnected */
           if (c == 0) {
             closesocket(clients[i].sock);
             remove_client(clients, i, &actual);
-            strncpy(buffer, client.name, BUF_SIZE - 1);
+            strncpy(buffer, client->name, BUF_SIZE - 1);
             strncat(buffer, " disconnected !", BUF_SIZE - strlen(buffer) - 1);
-            send_message_to_all_clients(clients, client, actual, buffer, 1);
+            send_message_to_all_clients(clients, *client, actual, buffer, 1);
           } else {
-            send_message_to_all_clients(clients, client, actual, buffer, 0);
-            printf("%s\n", buffer);
+            // ----------------------------------------------------------------------------------//
+            // args : player to challenge
+            if ((strcmp(props->command, "challenge") == 0) &&
+                (props->argc == 1)) {
+              create_challlenge(client, clients, props);
+            }
+            // ----------------------------------------------------------------------------------//
+            // args : index of the hole to play
+            else if ((strcmp(props->command, "play") == 0) &&
+                     (props->argc == 1)) {
+              play_awale(client, props);
+            }
+            // ----------------------------------------------------------------------------------//
+            // args : none
+            else if ((strcmp(props->command, "ff") == 0) &&
+                     (props->argc == 0)) {
+              forfeit(client);
+            } else if ((strcmp(props->command, "list") == 0) &&
+                       (props->argc == 0)) {
+              list(client, clients, actual);
+            } else if ((strcmp(props->command, "say") == 0) &&
+                       (props->argc > 0)) {
+              chat(client, clients, actual, props);
+            }
+            // ----------------------------------------------------------------------------------//
+            else {
+              printf("Unknown command : %s, or missing arguments.", buffer);
+            }
           }
           break;
         }
@@ -149,6 +180,15 @@ static void send_message_to_all_clients(Client *clients, Client sender,
   }
 }
 
+static void send_message_to_specific_client(Client client, const char *buffer,
+                                            char from_server) {
+  Client *client_arr_adapter = (Client *)malloc(sizeof(Client));
+  client_arr_adapter[0] = client;
+  Client dummy_client;
+  send_message_to_all_clients(client_arr_adapter, dummy_client, 1, buffer,
+                              from_server);
+}
+
 static int init_connection(void) {
   SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
   SOCKADDR_IN sin = {0};
@@ -191,6 +231,54 @@ static int read_client(SOCKET sock, char *buffer) {
   return n;
 }
 
+static void extract_props(const char *src, ParsedMessage *msg) {
+  if (!src || !msg || *src == '\0')
+    return;
+
+  char *copy = strdup(src);
+  if (!copy)
+    return;
+
+  char *token = strtok(copy, " ");
+  if (!token) {
+    free(copy);
+    return;
+  }
+
+  msg->command = strdup(token);
+  msg->argc = 0;
+  msg->argv = NULL;
+
+  // Récupération des arguments restants
+  while ((token = strtok(NULL, " ")) != NULL) {
+    char **tmp = realloc(msg->argv, sizeof(char *) * (msg->argc + 1));
+    if (!tmp) {
+      // En cas d’erreur realloc, on libère ce qui a été alloué avant de sortir
+      for (int i = 0; i < msg->argc; i++)
+        free(msg->argv[i]);
+      free(msg->argv);
+      free(msg->command);
+      free(copy);
+      return;
+    }
+    msg->argv = tmp;
+    msg->argv[msg->argc] = strdup(token);
+    msg->argc++;
+  }
+
+  free(copy);
+}
+
+static void free_parsed_message(ParsedMessage *msg) {
+  if (!msg)
+    return;
+  free(msg->command);
+  for (int i = 0; i < msg->argc; i++) {
+    free(msg->argv[i]);
+  }
+  free(msg->argv);
+}
+
 static void write_client(SOCKET sock, const char *buffer) {
   if (send(sock, buffer, strlen(buffer), 0) < 0) {
     perror("send()");
@@ -209,4 +297,300 @@ int main(int argc, char **argv) {
   end();
 
   return EXIT_SUCCESS;
+}
+
+// ---------------------------------------------------------------- //
+// Creates a challenge from the client to the challenged client and sends it to
+// the challenged client
+static void create_challlenge(Client *client, Client *clients,
+                              ParsedMessage *props) {
+  if (client->game == NULL && (strcmp(client->name, props->argv[0]) != 0)) {
+    int clientFound = 0;
+    for (int j = 0; j < MAX_CLIENTS; ++j) {
+      if (strcmp(clients[j].name, props->argv[0]) == 0) {
+        // the challenged client is found
+        clientFound = 1;
+        client->challenged = &clients[j];
+        if (clients[j].challenged == client) {
+          // launch a game
+          Game *game = (Game *)malloc(sizeof(Game));
+          game->capturedSeeds[0] = 0;
+          game->capturedSeeds[1] = 0;
+          game->clients[0] = client;
+          game->clients[1] = &clients[j];
+
+          // Random choice of the first player
+          srand(time(NULL));
+          int starterIndex = rand() % 2;
+          printf("Idx : %d\n", starterIndex);
+          game->currentPlayer = game->clients[starterIndex];
+          for (int k = 0; k < HALF_AWALE_BOARD_SIZE; k++) {
+            game->halfAwaleBoards[0][k] = 4;
+            game->halfAwaleBoards[1][k] = 4;
+          }
+
+          clients[j].game = client->game = game;
+
+          // Notify the players that the game is starting
+          char message[2048];
+          snprintf(message, sizeof(message),
+                   "The awale game versus %s has started.", clients[j].name);
+
+          send_message_to_specific_client(*client, message, 1);
+
+          snprintf(message, sizeof(message),
+                   "The awale game versus %s has started...", client->name);
+
+          send_message_to_specific_client(clients[j], message, 1);
+          sendEndOfTurnMessage(game, START);
+        } else {
+          clients[j].challenger = client;
+          char message[2048];
+          snprintf(message, sizeof(message), "Challenge sent to player %s.",
+                   props->argv[0]);
+
+          send_message_to_specific_client(*client, message, 1);
+
+          snprintf(message, sizeof(message),
+                   "Challenge received from player %s.", client->name);
+
+          send_message_to_specific_client(clients[j], message, 1);
+        }
+      }
+    }
+    if (!clientFound) {
+      char message[2048];
+      snprintf(message, sizeof(message), "The player %s is not connected.",
+               props->argv[0]);
+
+      send_message_to_specific_client(*client, message, 1);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- //
+static void forfeit(Client *client) {
+  if (client->game == NULL) {
+    send_message_to_specific_client(*client, "You are currently not in a game.",
+                                    1);
+  } else {
+    Game *currentGame = client->game;
+    Client *opponent = currentGame->clients[0] != client
+                           ? currentGame->clients[0]
+                           : currentGame->clients[1];
+    char message[2048];
+    snprintf(message, sizeof(message), "The player %s has forfeited. You won !",
+             client->name);
+
+    send_message_to_specific_client(*opponent, message, 1);
+
+    send_message_to_specific_client(*client, "You forfeited ...", 1);
+
+    client->game = NULL;
+    opponent->game = NULL;
+    client->challenged = NULL;
+    opponent->challenged = NULL;
+    client->challenger = NULL;
+    opponent->challenger = NULL;
+    free(currentGame);
+  }
+}
+
+// ---------------------------------------------------------------- //
+static void play_awale(Client *client, ParsedMessage *props) {
+  Game *game = client->game;
+  if (game->currentPlayer != client) {
+    send_message_to_specific_client(*client, "It's not your turn !", 1);
+    return;
+  }
+
+  // get the parameters of the shot
+  int holeIndex = atoi(props->argv[0]) - 1;
+
+  // handle errors
+  if (holeIndex < 0 || holeIndex >= HALF_AWALE_BOARD_SIZE) {
+    send_message_to_specific_client(
+        *client, "The hole index should be between 1 and 6... try again.", 1);
+    return;
+  }
+
+  // is the player the client1 ?
+  // clientIndex == 0 : player 1
+  // clientIndex == 1 : player 2
+  short clientIndex = (client == game->clients[1]) ? 1 : 0;
+  if (game->halfAwaleBoards[clientIndex][holeIndex] == 0) {
+    send_message_to_specific_client(*client, "The hole is empty... try again.",
+                                    1);
+    return;
+  }
+  int nbSeedsOnChooseHole = game->halfAwaleBoards[clientIndex][holeIndex];
+  // add seeds to concerned holes
+  game->halfAwaleBoards[clientIndex][holeIndex] = 0;
+  for (int i = 1; i <= nbSeedsOnChooseHole; i++) {
+    short currentBoardIndex =
+        ((holeIndex + i) / HALF_AWALE_BOARD_SIZE + clientIndex) % 2;
+    short currentHoleIndex = (holeIndex + i) % HALF_AWALE_BOARD_SIZE;
+
+    // increment hole
+    int *currentHole =
+        &(game->halfAwaleBoards[currentBoardIndex][currentHoleIndex]);
+    (*currentHole)++;
+
+    // Check if we are in the opponent's board
+    if (currentBoardIndex != clientIndex) {
+      // Take the seeds if we can
+      if (*currentHole == 2 || *currentHole == 3) {
+        game->capturedSeeds[clientIndex] += *currentHole;
+        *currentHole = 0;
+      }
+    }
+  }
+
+  // Check if one player's board is empty
+  char isEmpty[2] = {1, 1};
+  for (int i = 0; i < HALF_AWALE_BOARD_SIZE; i++) {
+
+    isEmpty[0] &= game->halfAwaleBoards[0][i] == 0;
+    isEmpty[1] &= game->halfAwaleBoards[1][i] == 0;
+  }
+
+  // if either side is empty or someone has 25 points
+  char isWon = 0;
+  for (int i = 0; i < 2; i++)
+    isWon |= (isEmpty[i] | (game->capturedSeeds[i] >= 25));
+
+  if (isWon) {
+    char winnerIndex = game->capturedSeeds[1] > game->capturedSeeds[0];
+    sendEndOfTurnMessage(game, ENDGAME);
+
+    send_message_to_specific_client(
+        *game->clients[winnerIndex],
+        "Félications ! Vous avez battu à plattes coutures votre adversaire !f",
+        1);
+    send_message_to_specific_client(*game->clients[(winnerIndex + 1) % 2],
+                                    "Dommage... vous avez perdu...", 1);
+  }
+  // send the new version to both players
+  else {
+    game->currentPlayer = game->clients[(clientIndex + 1) % 2];
+    sendEndOfTurnMessage(game, NORMAL);
+  }
+}
+
+void chat(Client *client, Client *otherClients, int clientNb,
+          ParsedMessage *props) {
+  char message[2048] = {0};
+
+  for (int i = 0; i < props->argc; i++) {
+    strcat(message, props->argv[i]);
+    strcat(message, " " );
+  }
+
+  for (int i = 1; i < props->argc; i++) {
+  }
+
+  for (int i = 0; i < clientNb; i++) {
+    if (&otherClients[i] != client) {
+      send_message_to_all_clients(otherClients, *client, clientNb, message, 0);
+    }
+  }
+}
+
+void sendEndOfTurnMessage(Game *game, EndOfTurnMessageMode mode) {
+  char message[2048];
+  char buffer[2048];
+
+  for (int i = 0; i < 2; i++) {
+    Client *client = game->clients[i];
+    Client *opponent = game->clients[(i + 1) % 2];
+
+    // Construction du message principal
+    if (mode == START) {
+      snprintf(message, sizeof(message), "C'est le tour de : %s\n\n",
+               game->currentPlayer->name);
+    } else {
+      snprintf(message, sizeof(message),
+               "\n===== Fin du tour =====\n"
+               "C'est le tour de : %s\n\n",
+               game->currentPlayer->name);
+    }
+
+    // Le joueur voit sa propre board en bas
+    int top = (i == 0) ? 1 : 0;
+    int bottom = !top;
+
+    strncat(message, "Plateau actuel :\n\n",
+            sizeof(message) - strlen(message) - 1);
+
+    // Ligne du haut (adversaire)
+    strncat(message, "  ", sizeof(message) - strlen(message) - 1);
+    for (int j = HALF_AWALE_BOARD_SIZE - 1; j >= 0; j--) {
+      snprintf(buffer, sizeof(buffer), "| %2d ", game->halfAwaleBoards[top][j]);
+      strncat(message, buffer, sizeof(message) - strlen(message) - 1);
+    }
+    strncat(message, "|\n", sizeof(message) - strlen(message) - 1);
+
+    // Ligne du bas (joueur)
+    strncat(message, "  ", sizeof(message) - strlen(message) - 1);
+    for (int j = 0; j < HALF_AWALE_BOARD_SIZE; j++) {
+      snprintf(buffer, sizeof(buffer), "| %2d ",
+               game->halfAwaleBoards[bottom][j]);
+      strncat(message, buffer, sizeof(message) - strlen(message) - 1);
+    }
+    strncat(message, "|\n", sizeof(message) - strlen(message) - 1);
+
+    // Graines capturées (on écrit ligne par ligne pour éviter les grands
+    // snprintf)
+    snprintf(buffer, sizeof(buffer), "\nGraines capturées :\n");
+    strncat(message, buffer, sizeof(message) - strlen(message) - 1);
+
+    snprintf(buffer, sizeof(buffer), "  %s : %d\n", client->name,
+             game->capturedSeeds[i]);
+    strncat(message, buffer, sizeof(message) - strlen(message) - 1);
+
+    snprintf(buffer, sizeof(buffer), "  %s : %d\n", opponent->name,
+             game->capturedSeeds[(i + 1) % 2]);
+    strncat(message, buffer, sizeof(message) - strlen(message) - 1);
+
+    strncat(message, "\n========================\n",
+            sizeof(message) - strlen(message) - 1);
+
+    // Envoi du message final
+    send_message_to_specific_client(*client, message, 1);
+  }
+}
+
+// ---------------------------------------------------- //
+
+static void list(Client *client, Client *clients, int nbClients) {
+  char message[2048];
+  char buffer[2048];
+
+  snprintf(message, sizeof(message),
+           "\nListe des joueurs actuellement connectés :\n");
+
+  int found = 0;
+  for (int i = 0; i < nbClients; i++) {
+    if (clients[i].sock != INVALID_SOCKET && strlen(clients[i].name) > 0 &&
+        strcmp(client->name, clients[i].name) != 0) {
+      found = 1;
+      snprintf(buffer, sizeof(buffer), "  - %s", clients[i].name);
+      strncat(message, buffer, sizeof(message) - strlen(message) - 1);
+
+      printf("i : %d\n", i);
+      if (clients[i].game != NULL) {
+        strncat(message, "\t(in game)", sizeof(message) - strlen(message) - 1);
+      }
+
+      strncat(message, "\n", sizeof(message) - strlen(message) - 1);
+    }
+  }
+
+  if (!found)
+    strncat(message, "  Aucun autre joueur connecté.\n",
+            sizeof(message) - strlen(message) - 1);
+
+  strncat(message, "\n", sizeof(message) - strlen(message) - 1);
+
+  send_message_to_specific_client(*client, message, 1);
 }
