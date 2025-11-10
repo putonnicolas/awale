@@ -201,7 +201,6 @@ static void remove_client(Client *clients, int to_remove, int *actual)
 {
   Client *removedClient = &clients[to_remove];
 
-  printf("remove \n");
   // Retirer le client des watchers de toutes les games
   remove_specific_watcher(removedClient);
   
@@ -209,7 +208,6 @@ static void remove_client(Client *clients, int to_remove, int *actual)
   memmove(clients + to_remove, clients + to_remove + 1,
     (*actual - to_remove - 1) * sizeof(Client));
     (*actual)--;
-    printf("end remove \n");
 }
 
 static void send_message_to_all_clients(Client *clients, Client sender,
@@ -821,7 +819,6 @@ static void remove_specific_watcher(Client *client)
   {
     if (client->gameToWatch->watchers[i] == client)
     {
-      printf("i : %d\n", i);
       remove_watcher(client->gameToWatch, i);
       break;
     }
