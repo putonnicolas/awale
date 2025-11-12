@@ -102,11 +102,8 @@ static void app(void) {
       }
 
       printf("%s\n", c.name);
-      printf("Proute\n");
       char isKnown = check_existing_user(&c);
-      printf("Proute2\n");
       load_user_data(&c);
-      printf("Proute3\n");
       c.challenged = NULL;
       c.challenger = NULL;
 
@@ -114,8 +111,8 @@ static void app(void) {
       if (isKnown) {
         snprintf(message, sizeof(message),
                  "Welcome back %s\nTo get a list of all available commands "
-                 "type [help].\n\nPlayers online : %d.",
-                 c.name, actual);
+                 "type [help].\n\nMy bio : %s\n\nPlayers online : %d.",
+                 c.name, c.bio, actual);
 
       } else {
         snprintf(
@@ -497,6 +494,8 @@ static void forfeit(Client *client) {
 
     send_message_to_specific_client(*client, "You forfeited ...", 1);
 
+    increment_user_win_count(opponent);
+
     client->game = NULL;
     opponent->game = NULL;
     client->challenged = NULL;
@@ -746,7 +745,7 @@ static void list(Client *client, Client *clients, int nbClients) {
     if (clients[i].sock != INVALID_SOCKET && strlen(clients[i].name) > 0 &&
         strcmp(client->name, clients[i].name) != 0) {
       found = 1;
-      snprintf(buffer, sizeof(buffer), "  - %s", clients[i].name);
+      snprintf(buffer, sizeof(buffer), "  - %s - victoires : %d", clients[i].name, clients[i].wins);
       strncat(message, buffer, sizeof(message) - strlen(message) - 1);
 
       if (clients[i].game != NULL) {
@@ -997,7 +996,6 @@ static void load_user_data(Client *client) {
         break;
       }
     }
-    printf("%s", bio);
   }
 
   fclose(f);
