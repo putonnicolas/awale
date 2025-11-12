@@ -83,16 +83,48 @@ static void app(void) {
       FD_SET(csock, &rdfs);
 
       Client c = {csock};
+
       strncpy(c.name, buffer, BUF_SIZE - 1);
+
+      char alreadyConnected = 0;
+      for (int j = 0; j < actual; j++) {
+        if (strcmp(clients[j].name, c.name) == 0) {
+          alreadyConnected = 1;
+          break;
+        }
+      }
+
+      if (alreadyConnected) {
+        send_message_to_specific_client(
+            c, "Username already connected. Connection refused.\n", 1);
+        closesocket(csock);
+        continue;
+      }
+
       printf("%s\n", c.name);
+      printf("Proute\n");
+      char isKnown = check_existing_user(&c);
+      printf("Proute2\n");
+      load_user_data(&c);
+      printf("Proute3\n");
       c.challenged = NULL;
       c.challenger = NULL;
 
       char message[2048];
-      snprintf(message, sizeof(message),
-               "Welcome %s to Online Awale XTrem Experience!\nTo get a list of "
-               "all available commands type [help].\n\nPlayers online : %d.",
-               c.name, actual);
+      if (isKnown) {
+        snprintf(message, sizeof(message),
+                 "Welcome back %s\nTo get a list of all available commands "
+                 "type [help].\n\nPlayers online : %d.",
+                 c.name, actual);
+
+      } else {
+        snprintf(
+            message, sizeof(message),
+            "Welcome %s to Online Awale XTrem Experience!\nTo get a list of "
+            "all available commands type [help].\n\nPlayers online : %d.",
+            c.name, actual);
+      }
+
       send_message_to_specific_client(c, message, 1);
       if (actual != 0)
         list(&c, clients, actual);
@@ -165,7 +197,16 @@ static void app(void) {
               stopwatch(client);
             }
             // ----------------------------------------------------------------------------------//
-            else {
+            else if ((strcmp(props->command, "bio") == 0) &&
+                     (props->argc > 0)) {
+              char message[2048] = {0};
+
+              for (int i = 0; i < props->argc; i++) {
+                strcat(message, props->argv[i]);
+                strcat(message, " ");
+              }
+              update_user_bio(client, message);
+            } else {
               printf("Unknown command : %s, or missing arguments.", buffer);
             }
           }
@@ -539,6 +580,7 @@ static void play_awale(Client *client, ParsedMessage *props) {
         *game->clients[winnerIndex],
         "Félications ! Vous avez battu à plattes coutures votre adversaire !f",
         1);
+    increment_user_win_count(game->clients[winnerIndex]);
     send_message_to_specific_client(*game->clients[(winnerIndex + 1) % 2],
                                     "Dommage... vous avez perdu...", 1);
   }
@@ -811,4 +853,158 @@ static void remove_watcher(Game *game, int index) {
   memmove(game->watchers + index, game->watchers + index + 1,
           (game->nbWatchers - index - 1) * sizeof(Client *));
   game->nbWatchers--;
+}
+
+static char check_existing_user(Client *client) {
+  FILE *f = fopen(USER_DB_FILE, "a+"); // Ouvre (ou crée) le fichier
+  if (f != NULL) {
+    char line[BUF_SIZE];
+    char found = 0;
+
+    rewind(f); // Revenir au début pour vérifier s’il existe déjà
+    while (fgets(line, sizeof(line), f)) {
+      // Supprimer les fins de ligne
+      line[strcspn(line, "\r\n")] = '\0';
+      if (strncmp(line, client->name, strlen(client->name)) == 0 &&
+          line[strlen(client->name)] == ';') {
+        found = 1;
+        break;
+      }
+    }
+
+    if (!found) {
+      fprintf(f, "%s;%d;%s\n", client->name, 0, "pas de bio");
+      fflush(f);
+    }
+
+    fclose(f);
+
+    return found;
+  } else {
+    perror("Erreur ouverture users.txt");
+    return 0;
+  }
+}
+
+// ------------------------------------------------------------
+// Increment the user's win count in users.txt by +1
+static void increment_user_win_count(Client *client) {
+  FILE *f = fopen(USER_DB_FILE, "r");
+  if (!f) {
+    perror("Erreur ouverture users.txt en lecture");
+    return;
+  }
+
+  // Load all lines in memory
+  char lines[256][BUF_SIZE];
+  int count = 0;
+
+  while (fgets(lines[count], sizeof(lines[count]), f) && count < 256) {
+    count++;
+  }
+  fclose(f);
+
+  // Rewrite file with updated wins
+  f = fopen(USER_DB_FILE, "w");
+  if (!f) {
+    perror("Erreur ouverture users.txt en écriture");
+    return;
+  }
+
+  for (int i = 0; i < count; i++) {
+    char name[BUF_SIZE], bio[BUF_SIZE] = {0};
+    int wins = 0;
+
+    // Parse each line
+    if (sscanf(lines[i], "%[^;];%d;%[^\n]", name, &wins, bio) >= 2) {
+      if (strcmp(name, client->name) == 0) {
+        wins += 1;
+        client->wins = wins;
+      }
+      fprintf(f, "%s;%d;%s\n", name, wins, bio);
+    }
+  }
+
+  fclose(f);
+}
+
+// Update a user's bio in users.txt
+static void update_user_bio(Client *client, char *newBio) {
+  FILE *f = fopen(USER_DB_FILE, "r");
+  if (!f) {
+    perror("Erreur ouverture users.txt en lecture");
+    return;
+  }
+
+  // Load all lines in memory
+  char lines[256][BUF_SIZE];
+  int count = 0;
+
+  while (fgets(lines[count], sizeof(lines[count]), f) && count < 256) {
+    count++;
+  }
+  fclose(f);
+
+  // Rewrite file with updated bio
+  f = fopen(USER_DB_FILE, "w");
+  if (!f) {
+    perror("Erreur ouverture %s en écriture");
+    return;
+  }
+
+  for (int i = 0; i < count; i++) {
+    char name[BUF_SIZE], bio[BUF_SIZE] = {0};
+    int wins = 0;
+
+    if (sscanf(lines[i], "%[^;];%d;%[^\n]", name, &wins, bio) >= 2) {
+      if (strcmp(name, client->name) == 0) {
+        // Replace bio with the new one
+        fprintf(f, "%s;%d;%s\n", name, wins, newBio);
+      } else {
+        // Keep existing data unchanged
+        fprintf(f, "%s;%d;%s\n", name, wins, bio);
+      }
+    }
+  }
+
+  fclose(f);
+}
+
+static void load_user_data(Client *client) {
+  FILE *f = fopen(USER_DB_FILE, "r");
+  if (!f) {
+    perror("Erreur ouverture %s en lecture");
+    client->wins = 0;
+    strncpy(client->bio, "pas de bio", sizeof(client->bio) - 1);
+    client->bio[sizeof(client->bio) - 1] = '\0';
+    return;
+  }
+
+  char line[BUF_SIZE];
+  char found = 0;
+
+  while (fgets(line, sizeof(line), f)) {
+    char name[BUF_SIZE], bio[BUF_SIZE];
+    unsigned int wins;
+
+    bio[0] = '\0';
+    if (sscanf(line, "%255[^;];%u;%255[^\n]", name, &wins, bio) >= 2) {
+      if (strcmp(name, client->name) == 0) {
+        client->wins = wins;
+        strncpy(client->bio, bio, sizeof(client->bio) - 1);
+        client->bio[sizeof(client->bio) - 1] = '\0';
+        found = 1;
+        break;
+      }
+    }
+    printf("%s", bio);
+  }
+
+  fclose(f);
+
+  if (!found) {
+    client->wins = 0;
+    strncpy(client->bio, "pas de bio", sizeof(client->bio) - 1);
+    client->bio[sizeof(client->bio) - 1] = '\0';
+  }
 }

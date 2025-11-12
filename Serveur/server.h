@@ -35,6 +35,8 @@ typedef struct in_addr IN_ADDR;
 
 #define BUF_SIZE 1024
 
+#define USER_DB_FILE "users.db"
+
 typedef struct Client Client;
 typedef struct Game Game;
 typedef struct ParsedMessage ParsedMessage;
@@ -42,6 +44,8 @@ typedef struct ParsedMessage ParsedMessage;
 struct Client {
   SOCKET sock;
   char name[BUF_SIZE];
+  unsigned int wins;
+  char bio[2048];
   Client *challenged;
   Client *challenger;
   Game *game;
@@ -57,7 +61,7 @@ struct Game {
     */
   Client *clients[2];
   Client *currentPlayer;
-  Client *watchers[MAX_CLIENTS]; 
+  Client *watchers[MAX_CLIENTS];
   int nbWatchers;
   int halfAwaleBoards[2][HALF_AWALE_BOARD_SIZE];
   int capturedSeeds[2];
@@ -87,7 +91,7 @@ static void remove_client(Client *clients, int to_remove, int *actual);
 static void clear_clients(Client *clients, int actual);
 static void extract_props(const char *src, ParsedMessage *msg);
 static void create_challenge(Client *client, Client *clients,
-                              ParsedMessage *props);
+                             ParsedMessage *props);
 static void deny(Client *client);
 static void forfeit(Client *client);
 static void chat(Client *client, Client *otherClients, int clientNb,
@@ -100,6 +104,11 @@ static void stopwatch(Client *client);
 static void remove_watcher(Game *game, int index);
 static void remove_specific_watcher(Client *client);
 static void help(Client *client);
-static void sendEndOfTurnMessageToWatchers(Game *game, EndOfTurnMessageMode mode);
+static void sendEndOfTurnMessageToWatchers(Game *game,
+                                           EndOfTurnMessageMode mode);
+static char check_existing_user(Client *client);
+static void increment_user_win_count(Client *client);
+static void update_user_bio(Client *client, char *newBio);
+static void load_user_data(Client *client);
 
 #endif /* guard */
