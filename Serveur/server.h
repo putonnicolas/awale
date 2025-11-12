@@ -45,7 +45,7 @@ struct Client {
   SOCKET sock;
   char name[BUF_SIZE];
   unsigned int wins;
-  char bio[2048];
+  char bio[1024];
   Client *challenged;
   Client *challenger;
   Game *game;
@@ -98,7 +98,7 @@ static void chat(Client *client, Client *otherClients, int clientNb,
                  ParsedMessage *props);
 static void play_awale(Client *client, ParsedMessage *props);
 static void sendEndOfTurnMessage(Game *game, EndOfTurnMessageMode modes);
-static void list(Client *client, Client *clients, int nbClients);
+static void list(Client *client, Client *clients, int nbClients, char showBio);
 static void watch(Client *client, Client *clients, ParsedMessage *props);
 static void stopwatch(Client *client);
 static void remove_watcher(Game *game, int index);
