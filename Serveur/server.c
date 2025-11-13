@@ -76,6 +76,11 @@ static void app(void)
     else if (FD_ISSET(sock, &rdfs))
     {
       /* new client */
+      if (actual >= MAX_CLIENTS)
+      {
+        perror("To many users. Can't accept new connections.\n");
+      }
+
       printf("New client\n");
       SOCKADDR_IN csin = {0};
       socklen_t sinsize = sizeof csin;
@@ -111,12 +116,15 @@ static void app(void)
       c->game = NULL;
 
       char alreadyConnected = 0;
-      for (int j = 0; j < actual; j++)
+      for (int j = 0; j < MAX_CLIENTS; j++)
       {
-        if (strcmp(clients[j]->name, c->name) == 0)
+        if (clients[j] != NULL)
         {
-          alreadyConnected = 1;
-          break;
+          if (strcmp(clients[j]->name, c->name) == 0)
+          {
+            alreadyConnected = 1;
+            break;
+          }
         }
       }
 
@@ -151,119 +159,130 @@ static void app(void)
       if (actual != 0)
         list(c, clients, actual, 0);
 
-      clients[actual] = c;
-      actual++;
+      for (int i = 0; i < MAX_CLIENTS; i++)
+      {
+        if (clients[i] == NULL)
+        {
+          clients[i] = c;
+          actual++;
+          break;
+        }
+      }
     }
     else
     {
       printf("Client talking\n");
       int i = 0;
-      for (i = 0; i < actual; i++)
+      for (i = 0; i < MAX_CLIENTS; i++)
       {
-        /* a client is talking */
-        if (FD_ISSET(clients[i]->sock, &rdfs))
+        if (clients[i] != NULL)
         {
-          Client *client = clients[i];
-          int c = read_client(clients[i]->sock, buffer);
-
-          ParsedMessage *props = (ParsedMessage *)malloc(sizeof(ParsedMessage));
-          extract_props(buffer, props);
-
-          /* client disconnected */
-          if (c == 0)
+          printf("noty n\n");
+          /* a client is talking */
+          if (FD_ISSET(clients[i]->sock, &rdfs))
           {
-            closesocket(clients[i]->sock);
-            remove_client(clients, i, &actual);
-            strncpy(buffer, client->name, BUF_SIZE - 1);
-            strncat(buffer, " disconnected !", BUF_SIZE - strlen(buffer) - 1);
-            send_message_to_all_clients(clients, *client, actual, buffer, 1);
-          }
-          else
-          {
-            // ----------------------------------------------------------------------------------//
-            // args : player to challenge
-            if ((strcmp(props->command, "challenge") == 0) &&
-                (props->argc == 1))
-            {
-              create_challenge(client, clients, props);
-            }
-            // ----------------------------------------------------------------------------------//
-            // args : index of the hole to play
-            else if ((strcmp(props->command, "play") == 0) &&
-                     (props->argc == 1))
-            {
-              play_awale(client, props);
-            }
-            // ----------------------------------------------------------------------------------//
-            // args : none
-            else if ((strcmp(props->command, "ff") == 0) &&
-                     (props->argc == 0))
-            {
-              forfeit(client);
-            }
-            else if ((strcmp(props->command, "list") == 0) &&
-                     (props->argc == 0))
-            {
-              list(client, clients, actual, 1);
-            }
-            else if ((strcmp(props->command, "say") == 0) &&
-                     (props->argc > 0))
-            {
-              chat(client, clients, actual, props);
-            }
-            else if ((strcmp(props->command, "deny") == 0) &&
-                     (props->argc == 0))
-            {
-              deny(client);
-            }
-            // ----------------------------------------------------------------------------------//
-            // args : none
-            else if ((strcmp(props->command, "help") == 0) &&
-                     (props->argc == 0))
-            {
-              help(client);
-            }
-            // ----------------------------------------------------------------------------------//
-            // args : name of the player to watch
-            else if ((strcmp(props->command, "watch") == 0) &&
-                     (props->argc == 1))
-            {
-              watch(client, clients, props);
-            }
-            // ----------------------------------------------------------------------------------//
-            // args : name of the player to watch
-            else if ((strcmp(props->command, "stopwatch") == 0) &&
-                     (props->argc == 0))
-            {
-              stopwatch(client);
-            }
-            // ----------------------------------------------------------------------------------//
-            else if ((strcmp(props->command, "bio") == 0) &&
-                     (props->argc > 0))
-            {
-              char message[2048] = {0};
+            Client *client = clients[i];
+            int c = read_client(clients[i]->sock, buffer);
 
-              for (int i = 0; i < props->argc; i++)
-              {
-                strcat(message, props->argv[i]);
-                strcat(message, " ");
-              }
-              update_user_bio(client, message);
+            /* client disconnected */
+            if (c == 0)
+            {
+              closesocket(clients[i]->sock);
+              remove_client(clients, i, &actual);
+              printf("removed!\n");
+              strncpy(buffer, client->name, BUF_SIZE - 1);
+              strncat(buffer, " disconnected !", BUF_SIZE - strlen(buffer) - 1);
+              send_message_to_all_clients(clients, *client, actual, buffer, 1);
             }
             else
             {
-              printf("Unknown command : %s, or missing arguments.", buffer);
+              ParsedMessage *props = (ParsedMessage *)malloc(sizeof(ParsedMessage));
+              extract_props(buffer, props);
+              // ----------------------------------------------------------------------------------//
+              // args : player to challenge
+              if ((strcmp(props->command, "challenge") == 0) &&
+                  (props->argc == 1))
+              {
+                create_challenge(client, clients, props);
+              }
+              // ----------------------------------------------------------------------------------//
+              // args : index of the hole to play
+              else if ((strcmp(props->command, "play") == 0) &&
+                       (props->argc == 1))
+              {
+                play_awale(client, props);
+              }
+              // ----------------------------------------------------------------------------------//
+              // args : none
+              else if ((strcmp(props->command, "ff") == 0) &&
+                       (props->argc == 0))
+              {
+                forfeit(client);
+              }
+              else if ((strcmp(props->command, "list") == 0) &&
+                       (props->argc == 0))
+              {
+                list(client, clients, actual, 1);
+              }
+              else if ((strcmp(props->command, "say") == 0) &&
+                       (props->argc > 0))
+              {
+                chat(client, clients, actual, props);
+              }
+              else if ((strcmp(props->command, "deny") == 0) &&
+                       (props->argc == 0))
+              {
+                deny(client);
+              }
+              // ----------------------------------------------------------------------------------//
+              // args : none
+              else if ((strcmp(props->command, "help") == 0) &&
+                       (props->argc == 0))
+              {
+                help(client);
+              }
+              // ----------------------------------------------------------------------------------//
+              // args : name of the player to watch
+              else if ((strcmp(props->command, "watch") == 0) &&
+                       (props->argc == 1))
+              {
+                watch(client, clients, props);
+              }
+              // ----------------------------------------------------------------------------------//
+              // args : name of the player to watch
+              else if ((strcmp(props->command, "stopwatch") == 0) &&
+                       (props->argc == 0))
+              {
+                stopwatch(client);
+              }
+              // ----------------------------------------------------------------------------------//
+              else if ((strcmp(props->command, "bio") == 0) &&
+                       (props->argc > 0))
+              {
+                char message[2048] = {0};
+
+                for (int i = 0; i < props->argc; i++)
+                {
+                  strcat(message, props->argv[i]);
+                  strcat(message, " ");
+                }
+                update_user_bio(client, message);
+              }
+              else
+              {
+                printf("Unknown command : %s, or missing arguments.", buffer);
+              }
+              // free the props
+              free(props->command);
+              for (int i = 0; i < props->argc; i++)
+                free(props->argv[i]);
+              free(props->argv);
+              free(props);
             }
+
+
+            break;
           }
-
-          // free the props
-          free(props->command);
-          for (int i = 0; i < props->argc; i++)
-            free(props->argv[i]);
-          free(props->argv);
-          free(props);
-
-          break;
         }
       }
     }
@@ -275,30 +294,30 @@ static void app(void)
 
 static void clear_clients(Client **clients, int actual)
 {
-  for (int i = 0; i < actual; i++)
+  for (int i = 0; i < MAX_CLIENTS; i++)
   {
-    closesocket(clients[i]->sock);
-    free(clients[i]);
+    if (clients[i] != NULL)
+    {
+      closesocket(clients[i]->sock);
+      free(clients[i]);
+    }
   }
   free(clients);
 }
 
 // ---------------------------------------------------- //
-void remove_client(Client **clients, int to_remove, int *actual)
+void remove_client(Client **clients, int toRemove, int *actual)
 {
   // Retirer le client des watchers de toutes les games
-  remove_specific_watcher(clients[to_remove]);
+  remove_specific_watcher(clients[toRemove]);
 
-  free(clients[to_remove]);
-
-  for (int i = to_remove; i < *actual - 1; i++)
-  {
-    clients[i] = clients[i + 1];
-  }
+  free(clients[toRemove]);
+  clients[toRemove] = NULL;
 
   (*actual)--;
 }
 
+// ---------------------------------------------------- //
 static void send_message_to_all_clients(Client **clients, Client sender,
                                         int actual, const char *buffer,
                                         char from_server)
@@ -462,6 +481,11 @@ int main(int argc, char **argv)
 static void create_challenge(Client *client, Client **clients,
                              ParsedMessage *props)
 {
+  if (!client || !clients)
+  {
+    return;
+  }
+
   if (strcmp(client->name, props->argv[0]) == 0)
   {
     send_message_to_specific_client(client, "You cannot challenge yourself...",
@@ -551,6 +575,9 @@ static void create_challenge(Client *client, Client **clients,
 
 static void deny(Client *client)
 {
+  if (!client)
+    return;
+
   if (client->challenger == NULL)
   {
     send_message_to_specific_client(client, "No one has challenged you yet.",
@@ -558,7 +585,6 @@ static void deny(Client *client)
   }
   else
   {
-
     char message[2048];
     snprintf(message, sizeof(message),
              "The player %s has denied your challenge.", client->name);

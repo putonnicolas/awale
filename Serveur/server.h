@@ -87,7 +87,7 @@ static void send_message_to_all_clients(Client **clients, Client client,
                                         char from_server);
 static void send_message_to_specific_client(Client* client, const char *buffer,
                                             char from_server);
-static void remove_client(Client **clients, int to_remove, int *actual);
+static void remove_client(Client **clients, int toRemove, int *actual);
 static void clear_clients(Client **clients, int actual);
 static void extract_props(const char *src, ParsedMessage *msg);
 static void create_challenge(Client *client, Client **clients,
