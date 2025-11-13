@@ -82,33 +82,33 @@ static int init_connection(void);
 static void end_connection(int sock);
 static int read_client(SOCKET sock, char *buffer);
 static void write_client(SOCKET sock, const char *buffer);
-static void send_message_to_all_clients(Client *clients, Client client,
+static void send_message_to_all_clients(Client **clients, Client client,
                                         int actual, const char *buffer,
                                         char from_server);
-static void send_message_to_specific_client(Client client, const char *buffer,
+static void send_message_to_specific_client(Client* client, const char *buffer,
                                             char from_server);
-static void remove_client(Client *clients, int to_remove, int *actual);
-static void clear_clients(Client *clients, int actual);
+static void remove_client(Client **clients, int to_remove, int *actual);
+static void clear_clients(Client **clients, int actual);
 static void extract_props(const char *src, ParsedMessage *msg);
-static void create_challenge(Client *client, Client *clients,
+static void create_challenge(Client *client, Client **clients,
                              ParsedMessage *props);
 static void deny(Client *client);
 static void forfeit(Client *client);
-static void chat(Client *client, Client *otherClients, int clientNb,
+static void chat(Client *client, Client **otherClients, int clientNb,
                  ParsedMessage *props);
 static void play_awale(Client *client, ParsedMessage *props);
-static void sendEndOfTurnMessage(Game *game, EndOfTurnMessageMode modes);
-static void list(Client *client, Client *clients, int nbClients, char showBio);
-static void watch(Client *client, Client *clients, ParsedMessage *props);
+static void send_end_of_turn_message(Game *game, EndOfTurnMessageMode modes);
+static void list(Client *client, Client **clients, int nbClients, char showBio);
+static void watch(Client *client, Client **clients, ParsedMessage *props);
 static void stopwatch(Client *client);
 static void remove_watcher(Game *game, int index);
 static void remove_specific_watcher(Client *client);
 static void help(Client *client);
-static void sendEndOfTurnMessageToWatchers(Game *game,
+static void send_end_of_turn_message_to_watchers(Game *game,
                                            EndOfTurnMessageMode mode);
 static char check_existing_user(Client *client);
 static void increment_user_win_count(Client *client);
 static void update_user_bio(Client *client, char *newBio);
 static void load_user_data(Client *client);
 
-#endif /* guard */
+#endif

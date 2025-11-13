@@ -34,8 +34,12 @@ static void app(void)
   int actual = 0;
   int max = sock;
   /* an array for all clients */
-  Client clients[MAX_CLIENTS];
-
+  Client **clients = malloc(MAX_CLIENTS * sizeof(Client *));
+  if (!clients)
+  {
+    perror("malloc clients");
+    exit(EXIT_FAILURE);
+  }
   fd_set rdfs;
 
   while (1)
@@ -52,7 +56,7 @@ static void app(void)
     /* add socket of each client */
     for (i = 0; i < actual; i++)
     {
-      FD_SET(clients[i].sock, &rdfs);
+      FD_SET(clients[i]->sock, &rdfs);
     }
 
     if (select(max + 1, &rdfs, NULL, NULL, NULL) == -1)
@@ -94,14 +98,22 @@ static void app(void)
 
       FD_SET(csock, &rdfs);
 
-      Client c = {csock};
-
-      strncpy(c.name, buffer, BUF_SIZE - 1);
+      Client *c = malloc(sizeof(Client));
+      if (!c)
+      {
+        perror("Error malloc Client\n");
+        continue;
+      }
+      c->sock = csock;
+      strncpy(c->name, buffer, BUF_SIZE - 1);
+      c->challenged = NULL;
+      c->challenger = NULL;
+      c->game = NULL;
 
       char alreadyConnected = 0;
       for (int j = 0; j < actual; j++)
       {
-        if (strcmp(clients[j].name, c.name) == 0)
+        if (strcmp(clients[j]->name, c->name) == 0)
         {
           alreadyConnected = 1;
           break;
@@ -116,11 +128,8 @@ static void app(void)
         continue;
       }
 
-      printf("%s\n", c.name);
-      char isKnown = check_existing_user(&c);
-      load_user_data(&c);
-      c.challenged = NULL;
-      c.challenger = NULL;
+      char isKnown = check_existing_user(c);
+      load_user_data(c);
 
       char message[4096];
       if (isKnown)
@@ -128,19 +137,19 @@ static void app(void)
         snprintf(message, sizeof(message),
                  "Welcome back %s\nTo get a list of all available commands "
                  "type [help].\n\nMy bio : %s\n\nPlayers online : %d.",
-                 c.name, c.bio, actual);
-
-      } else {
+                 c->name, c->bio, actual);
+      }
+      else
+      {
         snprintf(
             message, sizeof(message),
             "Welcome %s to Online Awale XTrem Experience!\nTo get a list of "
             "all available commands type [help].\n\nPlayers online : %d.",
-            c.name, actual);
+            c->name, actual);
       }
-
       send_message_to_specific_client(c, message, 1);
       if (actual != 0)
-        list(&c, clients, actual, 0);
+        list(c, clients, actual, 0);
 
       clients[actual] = c;
       actual++;
@@ -152,10 +161,10 @@ static void app(void)
       for (i = 0; i < actual; i++)
       {
         /* a client is talking */
-        if (FD_ISSET(clients[i].sock, &rdfs))
+        if (FD_ISSET(clients[i]->sock, &rdfs))
         {
-          Client *client = &clients[i];
-          int c = read_client(clients[i].sock, buffer);
+          Client *client = clients[i];
+          int c = read_client(clients[i]->sock, buffer);
 
           ParsedMessage *props = (ParsedMessage *)malloc(sizeof(ParsedMessage));
           extract_props(buffer, props);
@@ -163,7 +172,7 @@ static void app(void)
           /* client disconnected */
           if (c == 0)
           {
-            closesocket(clients[i].sock);
+            closesocket(clients[i]->sock);
             remove_client(clients, i, &actual);
             strncpy(buffer, client->name, BUF_SIZE - 1);
             strncat(buffer, " disconnected !", BUF_SIZE - strlen(buffer) - 1);
@@ -246,15 +255,15 @@ static void app(void)
               printf("Unknown command : %s, or missing arguments.", buffer);
             }
           }
-          break;
 
           // free the props
           free(props->command);
           for (int i = 0; i < props->argc; i++)
-          {
             free(props->argv[i]);
-          }
+          free(props->argv);
           free(props);
+
+          break;
         }
       }
     }
@@ -264,61 +273,74 @@ static void app(void)
   end_connection(sock);
 }
 
-static void clear_clients(Client *clients, int actual)
+static void clear_clients(Client **clients, int actual)
 {
-  int i = 0;
-  for (i = 0; i < actual; i++)
+  for (int i = 0; i < actual; i++)
   {
-    closesocket(clients[i].sock);
+    closesocket(clients[i]->sock);
+    free(clients[i]);
   }
+  free(clients);
 }
 
 // ---------------------------------------------------- //
-static void remove_client(Client *clients, int to_remove, int *actual)
+void remove_client(Client **clients, int to_remove, int *actual)
 {
-  Client *removedClient = &clients[to_remove];
-
   // Retirer le client des watchers de toutes les games
-  remove_specific_watcher(removedClient);
+  remove_specific_watcher(clients[to_remove]);
 
-  // On retire le client du tableau principal
-  memmove(clients + to_remove, clients + to_remove + 1,
-          (*actual - to_remove - 1) * sizeof(Client));
+  free(clients[to_remove]);
+
+  for (int i = to_remove; i < *actual - 1; i++)
+  {
+    clients[i] = clients[i + 1];
+  }
+
   (*actual)--;
 }
 
-static void send_message_to_all_clients(Client *clients, Client sender,
+static void send_message_to_all_clients(Client **clients, Client sender,
                                         int actual, const char *buffer,
                                         char from_server)
 {
   int i = 0;
   char message[BUF_SIZE];
-  message[0] = 0;
+  message[0] = '\0';
   for (i = 0; i < actual; i++)
   {
-    /* we don't send message to the sender */
-    if (sender.sock != clients[i].sock)
+    if (clients[i] != NULL)
     {
-      if (from_server == 0)
+      /* we don't send message to the sender */
+      if (sender.sock != clients[i]->sock)
       {
-        strncpy(message, sender.name, BUF_SIZE - 1);
-        strncat(message, " : ", sizeof message - strlen(message) - 1);
+        if (from_server == 0)
+        {
+          strncpy(message, sender.name, BUF_SIZE - 1);
+          strncat(message, " : ", sizeof message - strlen(message) - 1);
+        }
+        strncat(message, buffer, sizeof message - strlen(message) - 1);
+        write_client(clients[i]->sock, message);
       }
-      strncat(message, buffer, sizeof message - strlen(message) - 1);
-      write_client(clients[i].sock, message);
     }
   }
 }
 
 // ---------------------------------------------------- //
-static void send_message_to_specific_client(Client client, const char *buffer,
+static void send_message_to_specific_client(Client *client, const char *buffer,
                                             char from_server)
 {
-  Client *client_arr_adapter = (Client *)malloc(sizeof(Client));
+  if (!client)
+    return;
+
+  Client **client_arr_adapter = (Client **)malloc(sizeof(Client *));
+  if (!client_arr_adapter)
+    return;
+
   client_arr_adapter[0] = client;
-  Client dummy_client;
+  Client dummy_client = {.sock = -999};
   send_message_to_all_clients(client_arr_adapter, dummy_client, 1, buffer,
                               from_server);
+  free(client_arr_adapter);
 }
 
 static int init_connection(void)
@@ -411,16 +433,6 @@ static void extract_props(const char *src, ParsedMessage *msg)
   free(copy);
 }
 
-// static void free_parsed_message(ParsedMessage *msg) {
-//   if (!msg)
-//     return;
-//   free(msg->command);
-//   for (int i = 0; i < msg->argc; i++) {
-//     free(msg->argv[i]);
-//   }
-//   free(msg->argv);
-// }
-
 static void write_client(SOCKET sock, const char *buffer)
 {
   if (send(sock, buffer, strlen(buffer), 0) < 0)
@@ -447,12 +459,12 @@ int main(int argc, char **argv)
 // ---------------------------------------------------------------- //
 // Creates a challenge from the client to the challenged client and sends it to
 // the challenged client
-static void create_challenge(Client *client, Client *clients,
+static void create_challenge(Client *client, Client **clients,
                              ParsedMessage *props)
 {
   if (strcmp(client->name, props->argv[0]) == 0)
   {
-    send_message_to_specific_client(*client, "You cannot challenge yourself...",
+    send_message_to_specific_client(client, "You cannot challenge yourself...",
                                     1);
     return;
   }
@@ -461,59 +473,64 @@ static void create_challenge(Client *client, Client *clients,
     int clientFound = 0;
     for (int j = 0; j < MAX_CLIENTS; ++j)
     {
-      if (strcmp(clients[j].name, props->argv[0]) == 0)
+      if (clients[j] != NULL)
       {
-        // the challenged client is found
-        clientFound = 1;
-        client->challenged = &clients[j];
-        if (clients[j].challenged == client)
+        if (strcmp(clients[j]->name, props->argv[0]) == 0)
         {
-          // launch a game
-          Game *game = (Game *)malloc(sizeof(Game));
-          game->capturedSeeds[0] = 0;
-          game->capturedSeeds[1] = 0;
-          game->clients[0] = client;
-          game->clients[1] = &clients[j];
-
-          // Random choice of the first player
-          srand(time(NULL));
-          int starterIndex = rand() % 2;
-          game->currentPlayer = game->clients[starterIndex];
-          for (int k = 0; k < HALF_AWALE_BOARD_SIZE; k++)
+          // the challenged client is found
+          clientFound = 1;
+          client->challenged = clients[j];
+          if (clients[j]->challenged == client)
           {
-            game->halfAwaleBoards[0][k] = 4;
-            game->halfAwaleBoards[1][k] = 4;
+            // launch a game
+            Game *game = (Game *)malloc(sizeof(Game));
+            game->capturedSeeds[0] = 0;
+            game->capturedSeeds[1] = 0;
+            game->clients[0] = client;
+            game->clients[1] = clients[j];
+
+            // Random choice of the first player
+            srand(time(NULL));
+            int starterIndex = rand() % 2;
+            game->currentPlayer = game->clients[starterIndex];
+            for (int k = 0; k < HALF_AWALE_BOARD_SIZE; k++)
+            {
+              game->halfAwaleBoards[0][k] = 4;
+              game->halfAwaleBoards[1][k] = 4;
+            }
+
+            clients[j]->game = client->game = game;
+
+            // Notify the players that the game is starting
+            char message[2048];
+            snprintf(message, sizeof(message),
+                     "The awale game versus %s has started.", clients[j]->name);
+
+            send_message_to_specific_client(client, message, 1);
+
+            snprintf(message, sizeof(message),
+                     "The awale game versus %s has started...", client->name);
+
+            send_message_to_specific_client(clients[j], message, 1);
+            send_end_of_turn_message(game, START);
+            send_end_of_turn_message_to_watchers(game, START);
+            return;
           }
+          else
+          {
+            clients[j]->challenger = client;
+            char message[2048];
+            snprintf(message, sizeof(message), "Challenge sent to player %s.",
+                     props->argv[0]);
 
-          clients[j].game = client->game = game;
+            send_message_to_specific_client(client, message, 1);
 
-          // Notify the players that the game is starting
-          char message[2048];
-          snprintf(message, sizeof(message),
-                   "The awale game versus %s has started.", clients[j].name);
+            snprintf(message, sizeof(message),
+                     "Challenge received from player %s.", client->name);
 
-          send_message_to_specific_client(*client, message, 1);
-
-          snprintf(message, sizeof(message),
-                   "The awale game versus %s has started...", client->name);
-
-          send_message_to_specific_client(clients[j], message, 1);
-          sendEndOfTurnMessage(game, START);
-          sendEndOfTurnMessageToWatchers(game, START);
-        }
-        else
-        {
-          clients[j].challenger = client;
-          char message[2048];
-          snprintf(message, sizeof(message), "Challenge sent to player %s.",
-                   props->argv[0]);
-
-          send_message_to_specific_client(*client, message, 1);
-
-          snprintf(message, sizeof(message),
-                   "Challenge received from player %s.", client->name);
-
-          send_message_to_specific_client(clients[j], message, 1);
+            send_message_to_specific_client(clients[j], message, 1);
+            return;
+          }
         }
       }
     }
@@ -522,9 +539,13 @@ static void create_challenge(Client *client, Client *clients,
       char message[2048];
       snprintf(message, sizeof(message), "The player %s is not connected.",
                props->argv[0]);
-
-      send_message_to_specific_client(*client, message, 1);
+      send_message_to_specific_client(client, message, 1);
     }
+  }
+  else
+  {
+    send_message_to_specific_client(client, "You need to finish your actual game before starting another one !",
+                                    1);
   }
 }
 
@@ -532,7 +553,7 @@ static void deny(Client *client)
 {
   if (client->challenger == NULL)
   {
-    send_message_to_specific_client(*client, "No one has challenged you yet.",
+    send_message_to_specific_client(client, "No one has challenged you yet.",
                                     1);
   }
   else
@@ -541,11 +562,11 @@ static void deny(Client *client)
     char message[2048];
     snprintf(message, sizeof(message),
              "The player %s has denied your challenge.", client->name);
-    send_message_to_specific_client(*client->challenger, message, 1);
+    send_message_to_specific_client(client->challenger, message, 1);
 
     snprintf(message, sizeof(message), "You denied %s's challenge.",
              client->challenger->name);
-    send_message_to_specific_client(*client, message, 1);
+    send_message_to_specific_client(client, message, 1);
     client->challenger->challenged = NULL;
     client->challenger = NULL;
   }
@@ -556,7 +577,7 @@ static void forfeit(Client *client)
 {
   if (client->game == NULL)
   {
-    send_message_to_specific_client(*client, "You are currently not in a game.",
+    send_message_to_specific_client(client, "You are currently not in a game.",
                                     1);
   }
   else
@@ -569,9 +590,9 @@ static void forfeit(Client *client)
     snprintf(message, sizeof(message), "The player %s has forfeited. You won !",
              client->name);
 
-    send_message_to_specific_client(*opponent, message, 1);
+    send_message_to_specific_client(opponent, message, 1);
 
-    send_message_to_specific_client(*client, "You forfeited ...", 1);
+    send_message_to_specific_client(client, "You forfeited ...", 1);
 
     increment_user_win_count(opponent);
 
@@ -592,7 +613,7 @@ static void play_awale(Client *client, ParsedMessage *props)
   Game *game = client->game;
   if (game->currentPlayer != client)
   {
-    send_message_to_specific_client(*client, "It's not your turn !", 1);
+    send_message_to_specific_client(client, "It's not your turn !", 1);
     return;
   }
 
@@ -603,7 +624,7 @@ static void play_awale(Client *client, ParsedMessage *props)
   if (holeIndex < 0 || holeIndex >= HALF_AWALE_BOARD_SIZE)
   {
     send_message_to_specific_client(
-        *client, "The hole index should be between 1 and 6... try again.", 1);
+        client, "The hole index should be between 1 and 6... try again.", 1);
     return;
   }
 
@@ -613,7 +634,7 @@ static void play_awale(Client *client, ParsedMessage *props)
   short clientIndex = (client == game->clients[1]) ? 1 : 0;
   if (game->halfAwaleBoards[clientIndex][holeIndex] == 0)
   {
-    send_message_to_specific_client(*client, "The hole is empty... try again.",
+    send_message_to_specific_client(client, "The hole is empty... try again.",
                                     1);
     return;
   }
@@ -660,27 +681,27 @@ static void play_awale(Client *client, ParsedMessage *props)
   if (isWon)
   {
     short winnerIndex = game->capturedSeeds[1] > game->capturedSeeds[0];
-    sendEndOfTurnMessage(game, ENDGAME);
-    sendEndOfTurnMessageToWatchers(game, ENDGAME);
+    send_end_of_turn_message(game, ENDGAME);
+    send_end_of_turn_message_to_watchers(game, ENDGAME);
 
     send_message_to_specific_client(
-        *game->clients[winnerIndex],
+        game->clients[winnerIndex],
         "Félications ! Vous avez battu à plattes coutures votre adversaire !f",
         1);
     increment_user_win_count(game->clients[winnerIndex]);
-    send_message_to_specific_client(*game->clients[(winnerIndex + 1) % 2],
+    send_message_to_specific_client(game->clients[(winnerIndex + 1) % 2],
                                     "Dommage... vous avez perdu...", 1);
   }
   // send the new version to both players
   else
   {
     game->currentPlayer = game->clients[(clientIndex + 1) % 2];
-    sendEndOfTurnMessage(game, NORMAL);
-    sendEndOfTurnMessageToWatchers(game, NORMAL);
+    send_end_of_turn_message(game, NORMAL);
+    send_end_of_turn_message_to_watchers(game, NORMAL);
   }
 }
 
-void chat(Client *client, Client *otherClients, int clientNb,
+void chat(Client *client, Client **otherClients, int clientNb,
           ParsedMessage *props)
 {
   char message[2048] = {0};
@@ -694,7 +715,7 @@ void chat(Client *client, Client *otherClients, int clientNb,
   send_message_to_all_clients(otherClients, *client, clientNb, message, 0);
 }
 
-void sendEndOfTurnMessage(Game *game, EndOfTurnMessageMode mode)
+void send_end_of_turn_message(Game *game, EndOfTurnMessageMode mode)
 {
   char message[2048];
   char buffer[2048];
@@ -761,14 +782,14 @@ void sendEndOfTurnMessage(Game *game, EndOfTurnMessageMode mode)
             sizeof(message) - strlen(message) - 1);
 
     // Envoi du message final
-    send_message_to_specific_client(*client, message, 1);
+    send_message_to_specific_client(client, message, 1);
   }
 }
 
-static void sendEndOfTurnMessageToWatchers(Game *game,
-                                           EndOfTurnMessageMode mode)
+static void send_end_of_turn_message_to_watchers(Game *game,
+                                                 EndOfTurnMessageMode mode)
 {
-  if (game->nbWatchers == 0)
+  if (game == NULL || game->nbWatchers == 0)
     return;
 
   char message[2048];
@@ -832,14 +853,14 @@ static void sendEndOfTurnMessageToWatchers(Game *game,
     Client *watcher = game->watchers[i];
     if (watcher != NULL && watcher->sock != INVALID_SOCKET)
     {
-      send_message_to_specific_client(*watcher, message, 1);
+      send_message_to_specific_client(watcher, message, 1);
     }
   }
 }
 
 // ---------------------------------------------------- //
 
-static void list(Client *client, Client *clients, int nbClients, char showBio)
+static void list(Client *client, Client **clients, int nbClients, char showBio)
 {
   size_t messageSize = 2048 * nbClients;
   char *message = malloc(messageSize);
@@ -852,27 +873,31 @@ static void list(Client *client, Client *clients, int nbClients, char showBio)
            "\nListe des joueurs actuellement connectés :\n");
 
   int found = 0;
-  for (int i = 0; i < nbClients; i++)
+  for (int i = 0; i < MAX_CLIENTS; i++)
   {
-    if (clients[i].sock != INVALID_SOCKET && strlen(clients[i].name) > 0 &&
-        strcmp(client->name, clients[i].name) != 0)
+    if (clients[i] != NULL)
     {
-      found = 1;
-      snprintf(buffer, sizeof(buffer), "  - %s - victoires : %d", clients[i].name, clients[i].wins);
-      strncat(message, buffer, sizeof(message) - strlen(message) - 1);
 
-      if (clients[i].game != NULL)
+      if (clients[i]->sock != INVALID_SOCKET && strlen(clients[i]->name) > 0 &&
+          strcmp(client->name, clients[i]->name) != 0)
       {
-        strncat(message, "\t(in game)", messageSize - strlen(message) - 1);
-      }
+        found = 1;
+        snprintf(buffer, sizeof(buffer), "  - %s - victoires : %d", clients[i]->name, clients[i]->wins);
+        strncat(message, buffer, sizeof(message) - strlen(message) - 1);
 
-      if (showBio && clients[i].bio && strlen(clients[i].bio) > 0)
-      {
-        snprintf(buffer, sizeof(buffer), " — %s", clients[i].bio);
-        strncat(message, buffer, messageSize - strlen(message) - 1);
-      }
+        if (clients[i]->game != NULL)
+        {
+          strncat(message, "\t(in game)", messageSize - strlen(message) - 1);
+        }
 
-      strncat(message, "\n", messageSize - strlen(message) - 1);
+        if (showBio && clients[i]->bio && strlen(clients[i]->bio) > 0)
+        {
+          snprintf(buffer, sizeof(buffer), " — %s", clients[i]->bio);
+          strncat(message, buffer, messageSize - strlen(message) - 1);
+        }
+
+        strncat(message, "\n", messageSize - strlen(message) - 1);
+      }
     }
   }
 
@@ -884,7 +909,7 @@ static void list(Client *client, Client *clients, int nbClients, char showBio)
 
   strncat(message, "\n", messageSize - strlen(message) - 1);
 
-  send_message_to_specific_client(*client, message, 1);
+  send_message_to_specific_client(client, message, 1);
   free(message);
 }
 
@@ -896,6 +921,7 @@ static void help(Client *client)
            "\n--- Liste des commandes disponibles ---\n"
            "  list                  → Affiche la liste des joueurs connectés\n"
            "  challenge <nom>       → Défie un joueur en duel\n"
+           "  deny                  → Refuse le dernier challenge reçu\n"
            "  play <index>          → Joue un coup (index du trou à jouer)\n"
            "  ff                    → Abandonne la partie en cours\n"
            "  watch <nom>           → Observe la partie d’un joueur\n"
@@ -903,27 +929,31 @@ static void help(Client *client)
            "observée\n"
            "  say <message>         → Envoie un message à tout les joueurs "
            "connectés\n"
+           "  bio <message>         → Met à jour votre bio\n"
            "  help                  → Affiche cette aide\n"
            "\n----------------------------------------\n");
 
-  send_message_to_specific_client(*client, message, 1);
+  send_message_to_specific_client(client, message, 1);
 }
 
 // ---------------------------------------------------- //
-static void watch(Client *client, Client *clients, ParsedMessage *props)
+static void watch(Client *client, Client **clients, ParsedMessage *props)
 {
   short clientFound;
   for (int i = 0; i < MAX_CLIENTS; ++i)
   {
-    if (strcmp(clients[i].name, props->argv[0]) == 0)
+    if (clients[i] != NULL)
     {
-      if (clients[i].game != NULL)
+      if (strcmp(clients[i]->name, props->argv[0]) == 0)
       {
-        // the client to watch is found
-        clientFound = 1;
-        clients[i].game->watchers[clients[i].game->nbWatchers] = client;
-        clients[i].game->nbWatchers++;
-        client->gameToWatch = clients[i].game;
+        if (clients[i]->game != NULL)
+        {
+          // the client to watch is found
+          clientFound = 1;
+          clients[i]->game->watchers[clients[i]->game->nbWatchers] = client;
+          clients[i]->game->nbWatchers++;
+          client->gameToWatch = clients[i]->game;
+        }
       }
     }
   }
@@ -934,7 +964,7 @@ static void watch(Client *client, Client *clients, ParsedMessage *props)
     snprintf(message, sizeof(message), "The player %s is not in game.",
              props->argv[0]);
 
-    send_message_to_specific_client(*client, message, 1);
+    send_message_to_specific_client(client, message, 1);
   }
 }
 
@@ -944,7 +974,7 @@ static void stopwatch(Client *client)
   if (client->gameToWatch == NULL)
   {
     send_message_to_specific_client(
-        *client, "You are currently not watching a game.\n", 1);
+        client, "You are currently not watching a game.\n", 1);
     return;
   }
 
@@ -959,7 +989,7 @@ static void stopwatch(Client *client)
       game->clients[0]->name,
       game->clients[1] ? game->clients[1]->name : "(waiting for opponent)");
 
-  send_message_to_specific_client(*client, message, 1);
+  send_message_to_specific_client(client, message, 1);
 }
 
 // ---------------------------------------------------- //
@@ -1115,7 +1145,7 @@ static void update_user_bio(Client *client, char *newBio)
       {
         // Replace bio with the new one
         fprintf(f, "%s;%d;%s\n", name, wins, newBio);
-        strncpy(client->bio, newBio, sizeof(client->bio)- 1);
+        strncpy(client->bio, newBio, sizeof(client->bio) - 1);
       }
       else
       {
@@ -1161,7 +1191,7 @@ static void load_user_data(Client *client)
       }
     }
   }
-  
+
   fclose(f);
 
   if (!found)

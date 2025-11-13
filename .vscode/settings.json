@@ -1,6 +1,8 @@
 {
   "files.associations": {
     "in.h": "c",
-    "select.h": "c"
+    "select.h": "c",
+    "cstdlib": "c",
+    "typeinfo": "c"
   }
 }
