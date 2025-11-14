@@ -149,16 +149,15 @@
 // ----------------------------------------------------------------------------------//
  char check_existing_user(Client *client)
 {
-  FILE *f = fopen(USER_DB_FILE, "a+"); // Ouvre (ou crée) le fichier
+  FILE *f = fopen(USER_DB_FILE, "a+");
   if (f != NULL)
   {
     char line[BUF_SIZE];
     char found = 0;
 
-    rewind(f); // Revenir au début pour vérifier s’il existe déjà
+    rewind(f);
     while (fgets(line, sizeof(line), f))
     {
-      // Supprimer les fins de ligne
       line[strcspn(line, "\r\n")] = '\0';
       if (strncmp(line, client->name, strlen(client->name)) == 0 &&
           line[strlen(client->name)] == ';')
@@ -199,5 +198,3 @@ void chat(Client *client, Client **otherClients,
 
   send_message_to_all_clients(otherClients, *client, MAX_CLIENTS, message, 0);
 }
-
-

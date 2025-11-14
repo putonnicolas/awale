@@ -1,33 +1,44 @@
 CC = gcc
 CFLAGS = -Wall -g
 
+# Dossiers
 BUILD_DIR = build
 BIN_DIR = bin
 
-# Tous les fichiers source
-SERVER_SRCS = $(wildcard Serveur/**/*.c) $(wildcard watchers/*.c) $(wildcard game/*.c) $(wildcard parsing/*.c) $(wildcard utils/*.c)
-CLIENT_SRCS = $(wildcard Client/*.c)
+# Sources serveur
+SERVER_SRCS = \
+	Serveur/server.c \
+	Serveur/clients/client.c \
+	Serveur/watchers/watchers.c \
+	Serveur/game/game.c \
+	Serveur/parsing/parsing.c \
+	Serveur/utils/utils.c
 
-# Objets correspondants
-SERVER_OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SERVER_SRCS))
-CLIENT_OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(CLIENT_SRCS))
+# Sources client
+CLIENT_SRCS = Client/client.c
 
-# Binaires finaux
+# Objets compilés  
+SERVER_OBJS = $(SERVER_SRCS:%.c=$(BUILD_DIR)/%.o)
+CLIENT_OBJS = $(CLIENT_SRCS:%.c=$(BUILD_DIR)/%.o)
+
+# Binaires
 SERVER_BIN = $(BIN_DIR)/server
 CLIENT_BIN = $(BIN_DIR)/client
 
+# Règle principale
 all: $(SERVER_BIN) $(CLIENT_BIN)
 
-# Compilation des .o (pattern rule)
+# Compilation des .o
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Liens
+# Link serveur
 $(SERVER_BIN): $(SERVER_OBJS)
 	mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^
 
+# Link client
 $(CLIENT_BIN): $(CLIENT_OBJS)
 	mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^

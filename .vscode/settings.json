@@ -8,6 +8,8 @@
     "client.h": "c",
     "server.h": "c",
     "parsing.h": "c",
-    "utils.h": "c"
+    "utils.h": "c",
+    "config.h": "c",
+    "watchers.h": "c"
   }
 }

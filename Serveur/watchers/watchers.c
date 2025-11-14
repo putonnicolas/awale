@@ -111,7 +111,6 @@
   char message[2048];
   char buffer[2048];
 
-  // Construction du message de base (même visuel que les joueurs)
   if (mode == START)
   {
     snprintf(message, sizeof(message),
@@ -130,7 +129,7 @@
   strncat(message, "Plateau actuel :\n\n",
           sizeof(message) - strlen(message) - 1);
 
-  // Ligne du haut (client2)
+  // Top tab (client2)
   strncat(message, "  ", sizeof(message) - strlen(message) - 1);
   for (int j = HALF_AWALE_BOARD_SIZE - 1; j >= 0; j--)
   {
@@ -139,7 +138,7 @@
   }
   strncat(message, "|\n", sizeof(message) - strlen(message) - 1);
 
-  // Ligne du bas (client1)
+  // Bottom tab (client1)
   strncat(message, "  ", sizeof(message) - strlen(message) - 1);
   for (int j = 0; j < HALF_AWALE_BOARD_SIZE; j++)
   {
@@ -148,7 +147,7 @@
   }
   strncat(message, "|\n", sizeof(message) - strlen(message) - 1);
 
-  // Graines capturées
+  // Captured seeds
   snprintf(buffer, sizeof(buffer), "\nGraines capturées :\n");
   strncat(message, buffer, sizeof(message) - strlen(message) - 1);
 
@@ -163,7 +162,7 @@
   strncat(message, "\n========================\n",
           sizeof(message) - strlen(message) - 1);
 
-  // Envoi à tous les spectateurs
+  // Send to all spectateurs
   for (int i = 0; i < game->nbWatchers; i++)
   {
     Client *watcher = game->watchers[i];

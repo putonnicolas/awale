@@ -1,8 +1,8 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include "../clients/client.h"
 #include "../utils/config.h"
+#include "../clients/client.h"
 
 void help(Client *client);
 

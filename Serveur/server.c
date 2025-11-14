@@ -1,6 +1,6 @@
 #include "server.h"
 
- void init(void)
+void init(void)
 {
 #ifdef WIN32
   WSADATA wsa;
@@ -13,21 +13,22 @@
 #endif
 }
 
- void end(void)
+void end(void)
 {
 #ifdef WIN32
   WSACleanup();
 #endif
 }
 
- void app(void)
+void app(void)
 {
   SOCKET sock = init_connection();
   char buffer[BUF_SIZE];
   /* the index for the array */
   int actual = 0;
   int max = sock;
-  /* an array for all clients */
+
+  /* an array for all clients, initialize at NULL */
   Client **clients = malloc(sizeof(Client *) * MAX_CLIENTS);
   if (!clients)
   {
@@ -103,6 +104,7 @@
 
       FD_SET(csock, &rdfs);
 
+      // create a new client object and initialize it
       Client *c = malloc(sizeof(Client));
       if (!c)
       {
@@ -116,6 +118,7 @@
       c->game = NULL;
       c->gameToWatch = NULL;
 
+      // check if the player's username is already connected
       char alreadyConnected = 0;
       for (int j = 0; j < MAX_CLIENTS; j++)
       {
@@ -137,6 +140,7 @@
         continue;
       }
 
+      // check if the user connects to the game for the first time or not
       char isKnown = check_existing_user(c);
       load_user_data(c);
 
@@ -157,6 +161,7 @@
             c->name, actual);
       }
       send_message_to_specific_client(c, message, 1);
+
       if (actual != 0)
         list(c, clients, actual, 0);
 
@@ -195,6 +200,7 @@
             }
             else
             {
+              // extract the command and the args
               ParsedMessage *props = (ParsedMessage *)malloc(sizeof(ParsedMessage));
               extract_props(buffer, props);
               // ----------------------------------------------------------------------------------//
@@ -278,7 +284,7 @@
               {
                 char message[2048] = {0};
                 snprintf(message, sizeof(message),
-                      "Unknown command : %s, or missing arguments.", buffer);
+                         "Unknown command : %s, or missing arguments.", buffer);
                 send_message_to_specific_client(client, message, 1);
               }
               // free the props
@@ -301,8 +307,9 @@
 }
 
 // ---------------------------------------------------- //
- void clear_clients(Client **clients, int actual)
+void clear_clients(Client **clients, int actual)
 {
+  // Free and remove all clients that are not null
   for (int i = 0; i < MAX_CLIENTS; i++)
   {
     if (clients[i] != NULL)
@@ -318,12 +325,15 @@
 // ---------------------------------------------------- //
 void remove_client(Client **clients, int toRemove, int *actual)
 {
-  // Retirer le client des watchers de toutes les games
+  // Remove the client from the game he watch
   remove_specific_watcher(clients[toRemove]);
+
+  // make him forfate the game if he's in a party
   if (clients[toRemove]->game)
   {
     forfeit(clients[toRemove]);
   }
+
   closesocket(clients[toRemove]->sock);
 
   free(clients[toRemove]);
@@ -333,9 +343,9 @@ void remove_client(Client **clients, int toRemove, int *actual)
 }
 
 // ---------------------------------------------------- //
- void send_message_to_all_clients(Client **clients, Client sender,
-                                        int actual, const char *buffer,
-                                        char from_server)
+void send_message_to_all_clients(Client **clients, Client sender,
+                                 int actual, const char *buffer,
+                                 char from_server)
 {
   int i = 0;
   char message[BUF_SIZE];
@@ -360,8 +370,8 @@ void remove_client(Client **clients, int toRemove, int *actual)
 }
 
 // ---------------------------------------------------- //
- void send_message_to_specific_client(Client *client, const char *buffer,
-                                            char from_server)
+void send_message_to_specific_client(Client *client, const char *buffer,
+                                     char from_server)
 {
   if (!client)
     return;
@@ -373,7 +383,7 @@ void remove_client(Client **clients, int toRemove, int *actual)
 }
 
 // ---------------------------------------------------------------- //
- int init_connection(void)
+int init_connection(void)
 {
   SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
   SOCKADDR_IN sin = {0};
@@ -403,10 +413,10 @@ void remove_client(Client **clients, int toRemove, int *actual)
   return sock;
 }
 
- void end_connection(int sock) { closesocket(sock); }
+void end_connection(int sock) { closesocket(sock); }
 
 // ---------------------------------------------------------------- //
- int read_client(SOCKET sock, char *buffer)
+int read_client(SOCKET sock, char *buffer)
 {
   int n = 0;
 
@@ -423,50 +433,7 @@ void remove_client(Client **clients, int toRemove, int *actual)
 }
 
 // ---------------------------------------------------------------- //
- void extract_props(const char *src, ParsedMessage *msg)
-{
-  if (!src || !msg || *src == '\0')
-    return;
-
-  char *copy = strdup(src);
-  if (!copy)
-    return;
-
-  char *token = strtok(copy, " ");
-  if (!token)
-  {
-    free(copy);
-    return;
-  }
-
-  msg->command = strdup(token);
-  msg->argc = 0;
-  msg->argv = NULL;
-
-  // Récupération des arguments restants
-  while ((token = strtok(NULL, " ")) != NULL)
-  {
-    char **tmp = realloc(msg->argv, sizeof(char *) * (msg->argc + 1));
-    if (!tmp)
-    {
-      // En cas d’erreur realloc, on libère ce qui a été alloué avant de sortir
-      for (int i = 0; i < msg->argc; i++)
-        free(msg->argv[i]);
-      free(msg->argv);
-      free(msg->command);
-      free(copy);
-      return;
-    }
-    msg->argv = tmp;
-    msg->argv[msg->argc] = strdup(token);
-    msg->argc++;
-  }
-
-  free(copy);
-}
-
-// ---------------------------------------------------------------- //
- void write_client(SOCKET sock, const char *buffer)
+void write_client(SOCKET sock, const char *buffer)
 {
   if (send(sock, buffer, strlen(buffer), 0) < 0)
   {
@@ -475,30 +442,16 @@ void remove_client(Client **clients, int toRemove, int *actual)
   }
 }
 
-// ---------------------------------------------------------------- //
-int main(int argc, char **argv)
-{
-  printf("Initializing server...\n");
-  init();
-
-  printf("Starting server...\n");
-  app();
-
-  printf("Terminating server...\n");
-  end();
-
-  return EXIT_SUCCESS;
-}
-
 // ---------------------------------------------------- //
- void list(Client *client, Client **clients, int nbClients, char showBio)
+void list(Client *client, Client **clients, int nbClients, char showBio)
 {
+  // create a message of size according to the number of clients connected 
   size_t messageSize = 2048 * nbClients;
   char *message = malloc(messageSize);
   char buffer[4096];
 
   if (!message)
-    return; // sécurité en cas d’échec malloc
+    return;
 
   snprintf(message, messageSize,
            "\nListe des joueurs actuellement connectés :\n");
@@ -542,4 +495,19 @@ int main(int argc, char **argv)
 
   send_message_to_specific_client(client, message, 1);
   free(message);
+}
+
+// ---------------------------------------------------------------- //
+int main(int argc, char **argv)
+{
+  printf("Initializing server...\n");
+  init();
+
+  printf("Starting server...\n");
+  app();
+
+  printf("Terminating server...\n");
+  end();
+
+  return EXIT_SUCCESS;
 }

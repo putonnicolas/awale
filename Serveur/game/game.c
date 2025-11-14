@@ -97,7 +97,7 @@ void play_awale(Client *client, ParsedMessage *props)
 }
 
 // ---------------------------------------------------------------- //
- void forfeit(Client *client)
+void forfeit(Client *client)
 {
   if (client->game == NULL)
   {
@@ -142,7 +142,6 @@ void send_end_of_turn_message(Game *game, EndOfTurnMessageMode mode)
     Client *client = game->clients[i];
     Client *opponent = game->clients[(i + 1) % 2];
 
-    // Construction du message principal
     if (mode == START)
     {
       snprintf(message, sizeof(message), "C'est le tour de : %s\n\n",
@@ -156,14 +155,14 @@ void send_end_of_turn_message(Game *game, EndOfTurnMessageMode mode)
                game->currentPlayer->name);
     }
 
-    // Le joueur voit sa propre board en bas
+    // Top tab index
     int top = (i == 0) ? 1 : 0;
     int bottom = !top;
 
     strncat(message, "Plateau actuel :\n\n",
             sizeof(message) - strlen(message) - 1);
 
-    // Ligne du haut (adversaire)
+    // Top (opponent)
     strncat(message, "  ", sizeof(message) - strlen(message) - 1);
     for (int j = HALF_AWALE_BOARD_SIZE - 1; j >= 0; j--)
     {
@@ -172,7 +171,7 @@ void send_end_of_turn_message(Game *game, EndOfTurnMessageMode mode)
     }
     strncat(message, "|\n", sizeof(message) - strlen(message) - 1);
 
-    // Ligne du bas (joueur)
+    // Bottom (player)
     strncat(message, "  ", sizeof(message) - strlen(message) - 1);
     for (int j = 0; j < HALF_AWALE_BOARD_SIZE; j++)
     {
@@ -182,8 +181,7 @@ void send_end_of_turn_message(Game *game, EndOfTurnMessageMode mode)
     }
     strncat(message, "|\n", sizeof(message) - strlen(message) - 1);
 
-    // Graines capturées (on écrit ligne par ligne pour éviter les grands
-    // snprintf)
+    // Captured seeds
     snprintf(buffer, sizeof(buffer), "\nGraines capturées :\n");
     strncat(message, buffer, sizeof(message) - strlen(message) - 1);
 
@@ -198,13 +196,12 @@ void send_end_of_turn_message(Game *game, EndOfTurnMessageMode mode)
     strncat(message, "\n========================\n",
             sizeof(message) - strlen(message) - 1);
 
-    // Envoi du message final
     send_message_to_specific_client(client, message, 1);
   }
 }
 
 // ---------------------------------------------------------------- //
- void deny(Client *client)
+void deny(Client *client)
 {
   if (!client)
     return;
@@ -229,12 +226,11 @@ void send_end_of_turn_message(Game *game, EndOfTurnMessageMode mode)
   }
 }
 
-
 // ---------------------------------------------------------------- //
 // Creates a challenge from the client to the challenged client and sends it to
 // the challenged client
- void create_challenge(Client *client, Client **clients,
-                             ParsedMessage *props)
+void create_challenge(Client *client, Client **clients,
+                      ParsedMessage *props)
 {
   if (!client || !clients)
   {
@@ -337,4 +333,3 @@ void send_end_of_turn_message(Game *game, EndOfTurnMessageMode mode)
                                     1);
   }
 }
-
