@@ -94,7 +94,7 @@ static void create_challenge(Client *client, Client **clients,
                              ParsedMessage *props);
 static void deny(Client *client);
 static void forfeit(Client *client);
-static void chat(Client *client, Client **otherClients, int clientNb,
+static void chat(Client *client, Client **otherClients,
                  ParsedMessage *props);
 static void play_awale(Client *client, ParsedMessage *props);
 static void send_end_of_turn_message(Game *game, EndOfTurnMessageMode modes);
