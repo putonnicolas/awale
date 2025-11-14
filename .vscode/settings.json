@@ -3,6 +3,11 @@
     "in.h": "c",
     "select.h": "c",
     "cstdlib": "c",
-    "typeinfo": "c"
+    "typeinfo": "c",
+    "game.h": "c",
+    "client.h": "c",
+    "server.h": "c",
+    "parsing.h": "c",
+    "utils.h": "c"
   }
 }
